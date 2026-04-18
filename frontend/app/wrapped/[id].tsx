@@ -243,7 +243,7 @@ function CardRenderer({ card }: { card: WrappedCard }) {
     case 'top_list':
       return (
         <TopListCard
-          title={card.title}
+          title={card.title ?? ''}
           items={(d.items as Array<{ name: string; count: number }>).map((item, i) => ({
             ...item,
             rank: i + 1,
@@ -253,7 +253,7 @@ function CardRenderer({ card }: { card: WrappedCard }) {
     case 'insight':
       return (
         <InsightCard
-          title={card.title}
+          title={card.title ?? ''}
           text={d.text as string}
           chips={d.chips as string[] | undefined}
         />
@@ -261,7 +261,7 @@ function CardRenderer({ card }: { card: WrappedCard }) {
     case 'chart':
       return (
         <ChartCard
-          title={card.title}
+          title={card.title ?? ''}
           chartType={d.chartType as 'area' | 'bar' | 'donut'}
           data={d.data as number[]}
           labels={d.labels as string[]}
@@ -279,7 +279,7 @@ function CardRenderer({ card }: { card: WrappedCard }) {
     case 'comparison':
       return (
         <ComparisonCard
-          title={card.title}
+          title={card.title ?? ''}
           labels={d.labels as string[]}
           values={d.values as number[]}
           unit={d.unit as string}

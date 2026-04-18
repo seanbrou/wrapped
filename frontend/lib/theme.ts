@@ -6,27 +6,36 @@ export const colors = {
   primary: '#FFFFFF',
   secondary: '#8A8A9A',
   muted: '#4A4A5A',
-  accentPurple: '#6C5CE7',
+  gradientStart: '#6C5CE7',
+  gradientEnd: '#00D4FF',
+  accentPurple: '#7B5CE7',
   accentCyan: '#00D4FF',
   spotify: '#1DB954',
-  strava: '#FC4C02',
+  success: '#00C48C',
   danger: '#FF4757',
-  success: '#1DB954',
 };
 
 export const gradients = {
-  accent: ['#6C5CE7', '#00D4FF'] as const,
-  spotify: ['#1DB954', '#169C46'] as const,
-  strava: ['#FC4C02', '#D44000'] as const,
-  health: ['#FC3C44', '#D4303B'] as const,
-  steam: ['#1B2838', '#0F1923'] as const,
-  goodreads: ['#663311', '#4A2409'] as const,
+  purple: ['#7B5CE7', '#B45CE7'] as [string, string],
+  cyan: ['#00D4FF', '#0099CC'] as [string, string],
+  gold: ['#FFD700', '#FF8C00'] as [string, string],
+  spotify: ['#1DB954', '#1ED760'] as [string, string],
+  health: ['#FF6B6B', '#FF8E53'] as [string, string],
+  strava: ['#FC4C02', '#FF8C00'] as [string, string],
+  goodreads: ['#663399', '#9966CC'] as [string, string],
+  steam: ['#1B2838', '#2A475E'] as [string, string],
 };
 
-export const fonts = {
-  regular: 'System',
-  mono: 'System',
-};
+export function getServiceGradient(serviceId: string): [string, string] {
+  const map: Record<string, [string, string]> = {
+    spotify: gradients.spotify,
+    apple_health: gradients.health,
+    strava: gradients.strava,
+    goodreads: gradients.goodreads,
+    steam: gradients.steam,
+  };
+  return gradients.purple;
+}
 
 export const spacing = {
   xs: 4,
@@ -37,19 +46,15 @@ export const spacing = {
   xxl: 48,
 };
 
-export function getServiceGradient(service: string): readonly [string, string] {
-  switch (service) {
-    case 'spotify': return gradients.spotify;
-    case 'strava': return gradients.strava;
-    case 'apple_health': return gradients.health;
-    case 'steam': return gradients.steam;
-    case 'goodreads': return gradients.goodreads;
-    default: return gradients.accent;
-  }
-}
+export const borderRadius = {
+  sm: 8,
+  md: 16,
+  lg: 24,
+  full: 9999,
+};
 
 export function formatNumber(n: number): string {
-  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
-  if (n >= 1_000) return (n / 1_000).toFixed(1) + 'K';
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
   return n.toLocaleString();
 }

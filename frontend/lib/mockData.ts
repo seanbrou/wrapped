@@ -1,206 +1,112 @@
 import type { WrappedCard } from './api';
 
-export const MOCK_WRAPPED = {
-  id: 'mock-2025',
-  services: ['spotify', 'apple_health', 'strava', 'goodreads', 'steam'],
-  periodStart: '2024-01-01',
-  periodEnd: '2025-12-31',
-  cards: [
-    {
-      id: 'c1',
-      type: 'hero_stat',
-      service: 'intro',
-      title: "Here's Your Year",
-      data: { value: 2025, unit: '', label: '2025 Wrapped' },
-    },
-    {
-      id: 'c2',
-      type: 'hero_stat',
-      service: 'spotify',
-      title: '207 Hours',
-      data: { value: 207, unit: 'hours streamed', comparison: 'Up 23% from last year', emoji: '🎧' },
-    },
-    {
-      id: 'c3',
-      type: 'top_list',
-      service: 'spotify',
-      title: 'Your Top Artists',
-      data: {
-        items: [
-          { name: 'The Weeknd', count: 342 },
-          { name: 'Kendrick Lamar', count: 287 },
-          { name: 'Drake', count: 256 },
-          { name: 'Frank Ocean', count: 198 },
-          { name: 'Tyler, the Creator', count: 174 },
-        ],
-        category: 'artists',
-      },
-    },
-    {
-      id: 'c4',
-      type: 'insight',
-      service: 'spotify',
-      title: 'Your 2025 Vibe',
-      data: {
-        text: '60% late-night drives, 30% gym grind, 10% existential dread',
-        chips: ['#1 genre: hip-hop', '342 plays'],
-      },
-    },
-    {
-      id: 'c5',
-      type: 'chart',
-      service: 'spotify',
-      title: 'Your Listening Journey',
-      data: {
-        chartType: 'area',
-        data: [120, 145, 132, 158, 167, 189, 201, 195, 178, 210, 234, 256],
-        labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
-        unit: 'hours',
-      },
-    },
-    {
-      id: 'c6',
-      type: 'community',
-      service: 'apple_health',
-      title: 'How You Stack Up',
-      data: { metric: 'steps worldwide', value: '3.8M steps', percentile: 5 },
-    },
-    {
-      id: 'c7',
-      type: 'hero_stat',
-      service: 'apple_health',
-      title: '3.8M',
-      data: { value: 3847291, unit: 'steps taken', comparison: '12 miles walked per day', emoji: '👟' },
-    },
-    {
-      id: 'c8',
-      type: 'chart',
-      service: 'apple_health',
-      title: 'Workouts This Year',
-      data: {
-        chartType: 'bar',
-        data: [12, 15, 18, 14, 21, 19, 22, 25, 20, 23, 28, 31],
-        labels: ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D'],
-        unit: 'sessions',
-      },
-    },
-    {
-      id: 'c9',
-      type: 'hero_stat',
-      service: 'strava',
-      title: '1,247 km',
-      data: { value: 1247, unit: 'total distance', comparison: "That's 21x around Manhattan", emoji: '🏃' },
-    },
-    {
-      id: 'c10',
-      type: 'insight',
-      service: 'strava',
-      title: 'Consistency Check',
-      data: {
-        text: '94 activities logged. Your Strava grid is lighting up.',
-        chips: ['Top sport: Running', '94 total activities'],
-      },
-    },
-    {
-      id: 'c11',
-      type: 'chart',
-      service: 'strava',
-      title: 'Distance Each Month',
-      data: {
-        chartType: 'area',
-        data: [42, 55, 38, 67, 89, 102, 95, 88, 74, 98, 115, 124],
-        labels: ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D'],
-        unit: 'km',
-      },
-    },
-    {
-      id: 'c12',
-      type: 'hero_stat',
-      service: 'goodreads',
-      title: '47 Books',
-      data: { value: 47, unit: 'books read', comparison: '~273 pages each on average', emoji: '📚' },
-    },
-    {
-      id: 'c13',
-      type: 'insight',
-      service: 'goodreads',
-      title: 'Daily Reading',
-      data: {
-        text: '35 pages a day keeps the brain engaged.',
-        chips: ['12,834 total pages'],
-      },
-    },
-    {
-      id: 'c14',
-      type: 'hero_stat',
-      service: 'steam',
-      title: '1,347 hrs',
-      data: { value: 1347, unit: 'of gaming', comparison: "That's 56 full days in-game", emoji: '🎮' },
-    },
-    {
-      id: 'c15',
-      type: 'comparison',
-      service: 'spotify',
-      title: 'This Year vs Last Year',
-      data: { labels: ['Last Year', 'This Year'], values: [9840, 12430], unit: 'minutes' },
-    },
-    {
-      id: 'c16',
-      type: 'share',
-      service: 'spotify',
-      title: 'My 2025 Wrapped',
-      data: { stat: '12,430 minutes of music', service: 'spotify' },
-    },
-  ] as WrappedCard[],
-  insights: [
-    'You streamed enough music to fill 173 full playlists. Your ears have taste.',
-    'Your most-listened month was December. Holiday bangers hit different.',
-    'You read 47 books. The library called. It misses you.',
-    'You ran 1,247km. That\'s not running. That\'s time traveling.',
-  ],
-};
-
 export const SERVICE_DETAILS = [
-  {
-    id: 'spotify',
-    name: 'Spotify',
-    gradient: '#1DB954',
-    description: 'Top artists, tracks, minutes listened',
-    color: '#1DB954',
-  },
-  {
-    id: 'apple_health',
-    name: 'Apple Health',
-    gradient: '#FC3C44',
-    description: 'Steps, workouts, calories burned',
-    color: '#FC3C44',
-  },
-  {
-    id: 'strava',
-    name: 'Strava',
-    gradient: '#FC4C02',
-    description: 'Runs, rides, distances covered',
-    color: '#FC4C02',
-  },
-  {
-    id: 'goodreads',
-    name: 'Goodreads',
-    gradient: '#663311',
-    description: 'Books read, pages flipped',
-    color: '#663311',
-  },
-  {
-    id: 'steam',
-    name: 'Steam',
-    gradient: '#1B2838',
-    description: 'Games played, hours clocked',
-    color: '#1B2838',
-  },
+  { id: 'spotify', name: 'Spotify', color: '#1DB954' },
+  { id: 'apple_health', name: 'Apple Health', color: '#FF6B6B' },
+  { id: 'strava', name: 'Strava', color: '#FC4C02' },
+  { id: 'goodreads', name: 'Goodreads', color: '#663399' },
+  { id: 'steam', name: 'Steam', color: '#1B2838' },
 ];
 
 export const PERIODS = [
-  { label: 'This Year', value: 'year' },
-  { label: 'Last 6 Months', value: '6months' },
-  { label: 'Last 3 Months', value: '3months' },
-  { label: 'Custom', value: 'custom' },
+  { value: 'year', label: 'Year' },
+  { value: '6months', label: '6 Months' },
+  { value: '3months', label: '3 Months' },
+  { value: 'month', label: 'Month' },
 ];
+
+export const MOCK_INSIGHTS = [
+  'Your 2025 vibe: 60% productivity, 30% chaos, 10% chaotic espresso.',
+  'Spotify knows you better than your therapist — 47,382 minutes of deep cuts.',
+  "You're in the top 5% of readers worldwide. Bibliophile energy.",
+  'Your most chaotic month was March — 47 books and 12 all-nighters.',
+  'Health stats: 4.2M steps, 247 workouts, 0 excuses.',
+  "You outran 94% of Strava users this year. Speed demon energy.",
+];
+
+const makeHeroCard = (id: string, title: string, value: string, subtitle: string, service: string) => ({
+  id,
+  type: 'hero_stat' as const,
+  service,
+  title,
+  data: { value, unit: '', subtitle, emoji: '🎵' },
+});
+
+const makeTopListCard = (id: string, title: string, items: { name: string; count: number }[], service: string) => ({
+  id,
+  type: 'top_list' as const,
+  service,
+  title,
+  data: { items, emoji: '🎵' },
+});
+
+const makeInsightCard = (id: string, title: string, text: string) => ({
+  id,
+  type: 'insight' as const,
+  service: 'spotify',
+  title,
+  data: { text },
+});
+
+const makeChartCard = (id: string, title: string, data: number[], labels: string[], service: string) => ({
+  id,
+  type: 'chart' as const,
+  service,
+  title,
+  data: { chartType: 'area' as const, data, labels, unit: 'min' },
+});
+
+const makeCommunityCard = (id: string, percentile: number, metric: string, value: string) => ({
+  id,
+  type: 'community' as const,
+  service: 'spotify',
+  title: 'You vs Listeners',
+  data: { percentile, metric, value },
+});
+
+const makeComparisonCard = (id: string, title: string, labels: string[], values: number[], unit: string) => ({
+  id,
+  type: 'comparison' as const,
+  service: 'spotify',
+  title,
+  data: { labels, values, unit },
+});
+
+export const MOCK_CARDS: WrappedCard[] = [
+  makeHeroCard('card-1', 'Total Minutes', '42,847', 'More than 29 days of music!', 'spotify'),
+  makeTopListCard('card-2', 'Top Artists', [
+    { name: 'Kendrick Lamar', count: 2847 },
+    { name: 'Tyler, The Creator', count: 2156 },
+    { name: 'Frank Ocean', count: 1923 },
+    { name: 'Playboi Carti', count: 1847 },
+    { name: 'JPEGMAFIA', count: 1654 },
+  ], 'spotify'),
+  makeInsightCard('card-3', "You're in your music era", 'Kendrick on repeat — you really went deep this year.'),
+  makeChartCard('card-4', 'Monthly Listening', [3200, 2800, 3500, 3100, 2900, 3800, 4200, 3900, 3600, 3400, 3100, 3547],
+    ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D'], 'spotify'),
+  makeCommunityCard('card-5', 8, 'Minutes Listened', 'Top 8% of listeners worldwide'),
+  makeComparisonCard('card-6', 'vs Last Year', ['2024', '2025'], [35120, 42847], 'min'),
+  makeHeroCard('card-7', 'Total Steps', '4.2M', "That's 2,053 miles!", 'apple_health'),
+  makeTopListCard('card-8', 'Top Workouts', [
+    { name: 'Running', count: 87 },
+    { name: 'Cycling', count: 65 },
+    { name: 'HIIT', count: 42 },
+    { name: 'Walking', count: 38 },
+    { name: 'Yoga', count: 24 },
+  ], 'apple_health'),
+  makeInsightCard('card-9', 'Fitness Machine', '247 workouts — you did not skip leg day.'),
+  makeChartCard('card-10', 'Activity Trend', [180, 195, 210, 225, 240, 255, 270, 265, 280, 295, 287, 247],
+    ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D'], 'apple_health'),
+  makeCommunityCard('card-11', 5, 'Workouts', 'Top 5% most active users'),
+  makeComparisonCard('card-12', 'vs Last Year', ['2024', '2025'], [198, 247], 'workouts'),
+];
+
+export const MOCK_WRAPPED = {
+  id: 'wrapped-2025',
+  sessionId: 'mock-session-2025',
+  year: 2025,
+  services: ['spotify', 'apple_health'],
+  cards: MOCK_CARDS,
+  insights: MOCK_INSIGHTS,
+  createdAt: '2026-04-18T12:00:00Z',
+};
