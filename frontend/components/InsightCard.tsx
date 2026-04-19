@@ -1,183 +1,136 @@
 import React, { useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, Animated, Dimensions } from 'react-native';
-import { colors, typography, spacing, radii, motion, serviceColors } from '../lib/theme';
+import { View, Text, StyleSheet, Animated, Easing } from 'react-native';
+import { colors, type, space, motion, serviceById, type StoryAccent } from '../lib/theme';
 
-const { width: W } = Dimensions.get('window');
-
+interface Datum { label: string; value: string; }
 interface Props {
   headline: string;
-  supportingData: { label: string; value: string }[];
+  supportingData: Datum[];
   service: string;
+  accent: StoryAccent;
 }
 
-export function InsightCard({ headline, supportingData, service }: Props) {
-  const svc = serviceColors[service] || { primary: colors.accentFuchsia, bg: 'rgba(224,64,251,0.1)' };
-
-  const headlineOpacity = useRef(new Animated.Value(0)).current;
-  const headlineScale = useRef(new Animated.Value(0.9)).current;
-  const chipAnims = useRef(supportingData.map(() => new Animated.Value(0))).current;
-  const quoteOpacity = useRef(new Animated.Value(0)).current;
+// Editorial pull-quote. Large display copy, hairline-rule stat footer.
+export function InsightCard({ headline, supportingData, service, accent }: Props) {
+  const svc = serviceById[service];
+  const quote = useRef(new Animated.Value(0)).current;
+  const quoteY = useRef(new Animated.Value(30)).current;
+  const footer = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     Animated.sequence([
-      Animated.delay(200),
-      Animated.timing(quoteOpacity, { toValue: 1, duration: 300, useNativeDriver: true }),
+      Animated.delay(180),
       Animated.parallel([
-        Animated.timing(headlineOpacity, { toValue: 1, duration: 500, useNativeDriver: true }),
-        Animated.spring(headlineScale, { toValue: 1, ...motion.springGentle, useNativeDriver: true }),
+        Animated.timing(quote, {
+          toValue: 1,
+          duration: 700,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+        Animated.spring(quoteY, { toValue: 0, ...motion.springSoft, useNativeDriver: true }),
       ]),
-      Animated.delay(300),
-      Animated.stagger(150, chipAnims.map(a =>
-        Animated.spring(a, { toValue: 1, ...motion.spring, useNativeDriver: true })
-      )),
+      Animated.delay(200),
+      Animated.timing(footer, {
+        toValue: 1,
+        duration: 500,
+        useNativeDriver: true,
+      }),
     ]).start();
   }, []);
 
   return (
-    <View style={styles.container}>
-      <View style={[styles.bgGlow, { backgroundColor: svc.primary }]} />
+    <View style={styles.root}>
+      <View style={styles.top}>
+        <Text style={[styles.eyebrow, { color: accent.fg }]}>
+          {svc?.name ?? service} · insight
+        </Text>
+      </View>
 
-      <View style={styles.content}>
-        {/* Service badge */}
-        <View style={[styles.serviceBadge, { backgroundColor: svc.bg }]}>
-          <View style={[styles.serviceDot, { backgroundColor: svc.primary }]} />
-          <Text style={[styles.serviceLabel, { color: svc.primary }]}>
-            {service.replace('_', ' ').toUpperCase()}
-          </Text>
-        </View>
-
-        {/* Quote mark */}
-        <Animated.Text style={[styles.quoteMark, { opacity: quoteOpacity, color: svc.primary }]}>
-          "
-        </Animated.Text>
-
-        {/* Headline */}
-        <Animated.Text
-          style={[
-            styles.headline,
-            {
-              opacity: headlineOpacity,
-              transform: [{ scale: headlineScale }],
-            },
-          ]}
+      <View style={styles.center}>
+        <Animated.View
+          style={{
+            opacity: quote,
+            transform: [{ translateY: quoteY }],
+          }}
         >
-          {headline}
-        </Animated.Text>
+          <Text style={[styles.openQuote, { color: accent.fg }]}>“</Text>
+          <Text style={[styles.headline, { color: accent.fg }]}>
+            {headline}.
+          </Text>
+        </Animated.View>
+      </View>
 
-        <Animated.Text style={[styles.quoteMarkEnd, { opacity: quoteOpacity, color: svc.primary }]}>
-          "
-        </Animated.Text>
-
-        {/* Supporting data chips */}
-        <View style={styles.chips}>
-          {supportingData.map((chip, i) => (
-            <Animated.View
-              key={i}
-              style={[
-                styles.chip,
-                {
-                  opacity: chipAnims[i],
-                  transform: [
-                    { translateY: chipAnims[i].interpolate({ inputRange: [0, 1], outputRange: [15, 0] }) },
-                  ],
-                },
-              ]}
-            >
-              <Text style={styles.chipValue}>{chip.value}</Text>
-              <Text style={styles.chipLabel}>{chip.label}</Text>
-            </Animated.View>
+      <Animated.View style={[styles.footer, { opacity: footer }]}>
+        <View style={[styles.rule, { backgroundColor: accent.fg + '55' }]} />
+        <View style={styles.stats}>
+          {supportingData.map((d, i) => (
+            <View key={i} style={styles.stat}>
+              <Text style={[styles.statValue, { color: accent.fg }]}>{d.value}</Text>
+              <Text style={[styles.statLabel, { color: accent.fg }]}>{d.label}</Text>
+            </View>
           ))}
         </View>
-      </View>
+      </Animated.View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  root: {
     flex: 1,
-    backgroundColor: colors.background,
+    paddingHorizontal: space.lg,
+    paddingTop: 110,
+    paddingBottom: 80,
+  },
+  top: {
+    marginBottom: space.xl,
+  },
+  eyebrow: {
+    ...type.eyebrow,
+    opacity: 0.7,
+  },
+  center: {
+    flex: 1,
     justifyContent: 'center',
-    overflow: 'hidden',
   },
-  bgGlow: {
-    position: 'absolute',
-    width: W * 1.4,
-    height: W * 1.4,
-    borderRadius: W,
-    opacity: 0.04,
-    top: -W * 0.5,
-    left: -W * 0.2,
-  },
-  content: {
-    paddingHorizontal: spacing.xl,
-    alignItems: 'center',
-  },
-  serviceBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: radii.full,
-    gap: 6,
-    marginBottom: spacing.xxl,
-  },
-  serviceDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-  },
-  serviceLabel: {
-    ...typography.overline,
-    fontSize: 10,
-  },
-  quoteMark: {
-    fontSize: 56,
+  openQuote: {
+    fontSize: 140,
     fontWeight: '800',
-    lineHeight: 60,
-    marginBottom: -10,
-    opacity: 0.5,
+    lineHeight: 158,
+    marginBottom: space.md,
+    opacity: 0.85,
+    marginLeft: -8,
+    includeFontPadding: false,
+    paddingTop: 4,
   },
   headline: {
-    ...typography.h1,
-    fontSize: 26,
-    lineHeight: 36,
-    color: colors.primary,
-    textAlign: 'center',
-    marginBottom: 0,
+    fontSize: 40,
+    lineHeight: 48,
+    fontWeight: '700',
+    letterSpacing: -1,
+    includeFontPadding: false,
   },
-  quoteMarkEnd: {
-    fontSize: 56,
-    fontWeight: '800',
-    lineHeight: 60,
-    marginTop: -10,
-    opacity: 0.5,
-    marginBottom: spacing.xxl,
+  footer: {
+    gap: space.lg,
   },
-  chips: {
+  rule: {
+    height: StyleSheet.hairlineWidth,
+    width: '100%',
+  },
+  stats: {
     flexDirection: 'row',
-    gap: spacing.md,
+    gap: space.xl,
   },
-  chip: {
-    backgroundColor: colors.glassFill2,
-    borderRadius: radii.lg,
-    borderWidth: 1,
-    borderColor: colors.glassStroke,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    alignItems: 'center',
-    minWidth: 100,
+  stat: {
+    gap: 4,
   },
-  chipValue: {
-    ...typography.monoLarge,
+  statValue: {
     fontSize: 28,
-    lineHeight: 32,
-    color: colors.primary,
-    marginBottom: 4,
+    fontWeight: '800',
+    letterSpacing: -1,
   },
-  chipLabel: {
-    ...typography.overline,
-    fontSize: 9,
-    color: colors.tertiary,
+  statLabel: {
+    ...type.eyebrow,
+    opacity: 0.65,
   },
 });

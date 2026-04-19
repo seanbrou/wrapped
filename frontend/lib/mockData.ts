@@ -1,17 +1,86 @@
 // ═══════════════════════════════════════════════════════════════
-// Mock Data — Rich demo data for Wrapped story experience
+// Mock data: templates, periods, sample recap cards.
 // ═══════════════════════════════════════════════════════════════
 
 export const PERIODS = [
-  { label: 'This Year', value: 'year' },
-  { label: 'Last 6 Months', value: '6months' },
-  { label: 'All Time', value: 'all' },
+  { label: 'This year', value: 'year' },
+  { label: '6 months', value: '6months' },
+  { label: 'All time', value: 'all' },
+];
+
+export interface Template {
+  id: string;
+  name: string;
+  blurb: string;
+  accentKey: 'mint' | 'red' | 'amber' | 'sky' | 'lilac' | 'coral';
+  services: string[];
+  approxCards: number;
+  tag: string;
+}
+
+export const TEMPLATES: Template[] = [
+  {
+    id: 'year',
+    name: 'Year in Review',
+    blurb: 'Everything you do, in one story.',
+    accentKey: 'lilac',
+    services: [
+      'spotify', 'apple_health', 'strava', 'goodreads', 'steam',
+      'fitbit', 'youtube', 'lastfm',
+    ],
+    approxCards: 15,
+    tag: 'Recommended',
+  },
+  {
+    id: 'music',
+    name: 'Just Music',
+    blurb: 'Top artists, genres and minutes.',
+    accentKey: 'mint',
+    services: ['spotify'],
+    approxCards: 6,
+    tag: 'Spotify',
+  },
+  {
+    id: 'fitness',
+    name: 'Fitness Pulse',
+    blurb: 'Runs, rides and movement, stitched together.',
+    accentKey: 'red',
+    services: ['apple_health', 'strava', 'fitbit'],
+    approxCards: 8,
+    tag: 'Health',
+  },
+  {
+    id: 'reader',
+    name: "Reader's Cut",
+    blurb: 'Books finished, pages devoured.',
+    accentKey: 'amber',
+    services: ['goodreads'],
+    approxCards: 6,
+    tag: 'Books',
+  },
+  {
+    id: 'gamer',
+    name: 'Gamer Log',
+    blurb: 'Hours, games, achievements.',
+    accentKey: 'sky',
+    services: ['steam'],
+    approxCards: 6,
+    tag: 'Games',
+  },
+  {
+    id: 'custom',
+    name: 'Custom mix',
+    blurb: 'Pick your own apps and length.',
+    accentKey: 'coral',
+    services: [],
+    approxCards: 10,
+    tag: 'Build yourself',
+  },
 ];
 
 export const MOCK_WRAPPED = {
   id: 'demo-session-2026',
   cards: [
-    // 1. Hero stat — Spotify minutes
     {
       type: 'hero_stat',
       service: 'spotify',
@@ -19,25 +88,23 @@ export const MOCK_WRAPPED = {
         stat: '32,847',
         value: 'Minutes listened this year',
         unit: 'minutes',
-        comparison: "That's 2x more than last year 🔥",
+        comparison: "That's 2x more than last year.",
       },
     },
-    // 2. Top list — top artists
     {
       type: 'top_list',
       service: 'spotify',
       data: {
         title: 'Your Top Artists',
         items: [
-          { rank: 1, name: 'Radiohead', stat: '847 plays', emoji: '🎸' },
-          { rank: 2, name: 'Tyler, the Creator', stat: '623 plays', emoji: '🎤' },
-          { rank: 3, name: 'Tame Impala', stat: '512 plays', emoji: '🌀' },
-          { rank: 4, name: 'King Krule', stat: '401 plays', emoji: '🎵' },
-          { rank: 5, name: 'Frank Ocean', stat: '378 plays', emoji: '🌊' },
+          { rank: 1, name: 'Radiohead', stat: '847 plays' },
+          { rank: 2, name: 'Tyler, the Creator', stat: '623 plays' },
+          { rank: 3, name: 'Tame Impala', stat: '512 plays' },
+          { rank: 4, name: 'King Krule', stat: '401 plays' },
+          { rank: 5, name: 'Frank Ocean', stat: '378 plays' },
         ],
       },
     },
-    // 3. Community — Spotify percentile
     {
       type: 'community',
       service: 'spotify',
@@ -47,7 +114,6 @@ export const MOCK_WRAPPED = {
         value: '548 hours',
       },
     },
-    // 4. Insight — Spotify
     {
       type: 'insight',
       service: 'spotify',
@@ -59,7 +125,6 @@ export const MOCK_WRAPPED = {
         ],
       },
     },
-    // 5. Chart — Strava monthly miles
     {
       type: 'chart',
       service: 'strava',
@@ -70,7 +135,6 @@ export const MOCK_WRAPPED = {
         labels: ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D'],
       },
     },
-    // 6. Hero stat — Strava
     {
       type: 'hero_stat',
       service: 'strava',
@@ -78,10 +142,9 @@ export const MOCK_WRAPPED = {
         stat: '351',
         value: 'Miles run this year',
         unit: 'miles',
-        comparison: 'You ran further than NYC to DC 🏃',
+        comparison: 'You ran further than NYC to DC.',
       },
     },
-    // 7. Comparison — Strava
     {
       type: 'comparison',
       service: 'strava',
@@ -92,7 +155,6 @@ export const MOCK_WRAPPED = {
         unit: 'mi',
       },
     },
-    // 8. Hero stat — Goodreads
     {
       type: 'hero_stat',
       service: 'goodreads',
@@ -100,25 +162,23 @@ export const MOCK_WRAPPED = {
         stat: '47',
         value: 'Books read this year',
         unit: 'books',
-        comparison: "That's almost one per week 📖",
+        comparison: "That's almost one per week.",
       },
     },
-    // 9. Top list — books
     {
       type: 'top_list',
       service: 'goodreads',
       data: {
         title: 'Your Top Books',
         items: [
-          { rank: 1, name: 'The Three-Body Problem', stat: '★★★★★', emoji: '📖' },
-          { rank: 2, name: 'Project Hail Mary', stat: '★★★★★', emoji: '🚀' },
-          { rank: 3, name: 'Tomorrow, and Tomorrow', stat: '★★★★½', emoji: '🎮' },
-          { rank: 4, name: 'Klara and the Sun', stat: '★★★★', emoji: '☀️' },
-          { rank: 5, name: 'Piranesi', stat: '★★★★', emoji: '🏛️' },
+          { rank: 1, name: 'The Three-Body Problem', stat: 'Five stars' },
+          { rank: 2, name: 'Project Hail Mary', stat: 'Five stars' },
+          { rank: 3, name: 'Tomorrow, and Tomorrow', stat: 'Four and a half' },
+          { rank: 4, name: 'Klara and the Sun', stat: 'Four stars' },
+          { rank: 5, name: 'Piranesi', stat: 'Four stars' },
         ],
       },
     },
-    // 10. Community — Goodreads
     {
       type: 'community',
       service: 'goodreads',
@@ -128,7 +188,6 @@ export const MOCK_WRAPPED = {
         value: '47 books',
       },
     },
-    // 11. Insight — Steam
     {
       type: 'insight',
       service: 'steam',
@@ -140,7 +199,6 @@ export const MOCK_WRAPPED = {
         ],
       },
     },
-    // 12. Chart — Steam hours
     {
       type: 'chart',
       service: 'steam',
@@ -151,7 +209,6 @@ export const MOCK_WRAPPED = {
         labels: ['Elden Ring', "Baldur's Gate", 'Cyberpunk', 'Hades', 'Celeste'],
       },
     },
-    // 13. Hero stat — Apple Health
     {
       type: 'hero_stat',
       service: 'apple_health',
@@ -159,10 +216,9 @@ export const MOCK_WRAPPED = {
         stat: '2.4M',
         value: 'Steps taken this year',
         unit: 'steps',
-        comparison: "That's walking from NYC to LA 🔥",
+        comparison: "That's walking from NYC to LA.",
       },
     },
-    // 14. Community — Apple Health
     {
       type: 'community',
       service: 'apple_health',
@@ -172,7 +228,6 @@ export const MOCK_WRAPPED = {
         value: '87 avg min/day',
       },
     },
-    // 15. Share card
     {
       type: 'share',
       service: 'all',

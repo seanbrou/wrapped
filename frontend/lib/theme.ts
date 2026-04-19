@@ -1,402 +1,433 @@
 // ═══════════════════════════════════════════════════════════════
-// Wrapped — Cinematic Dark Luxury Design System v2
-// Deep black canvas, vivid neon gradients, glass surfaces,
-// spring-physics motion, premium typography
+// Wrapped — Light Editorial + Playful Design System
+// Warm paper canvas, ink primary, saturated rotating accents for
+// the story cards. Composition-first, celebratory but restrained.
 // ═══════════════════════════════════════════════════════════════
 
 import { StyleSheet, Platform } from 'react-native';
 
-// ─── Color Palette ───────────────────────────────────────────
+// ─── Color ───────────────────────────────────────────────────
 export const colors = {
-  // Foundations
-  background:     '#06060C',
-  surface:        '#0D0D18',
-  surfaceElevated:'#12121F',
-  surfaceHover:   '#181828',
-  border:         '#1A1A2E',
-  borderLight:    '#252540',
-  borderFocus:    '#3A3A5C',
+  // Canvas — warm paper, not flat white
+  background:     '#F5F0E6',  // ivory / paper
+  backgroundAlt:  '#EFE8DA',  // slightly darker for bands
+  surface:        '#FFFFFF',  // card
+  surfaceRaised:  '#FFFFFF',
+  surfaceTint:    '#FBF6EB',  // tinted panel
+  hairline:       'rgba(20, 16, 10, 0.08)',
+  hairlineStrong: 'rgba(20, 16, 10, 0.16)',
 
-  // Text hierarchy
-  primary:        '#FFFFFF',
-  secondary:      '#7E7E96',
-  tertiary:       '#4D4D66',
-  muted:          '#33334D',
+  // Ink
+  ink:            '#141008',
+  primary:        '#141008',
+  secondary:      'rgba(20, 16, 10, 0.66)',
+  tertiary:       'rgba(20, 16, 10, 0.46)',
+  muted:          'rgba(20, 16, 10, 0.26)',
 
-  // Accent system — Purple → Fuchsia → Cyan
-  accentPurple:   '#6C5CE7',
-  accentFuchsia:  '#E040FB',
-  accentCyan:     '#00E5FF',
-  accentPink:     '#FF2D78',
-  accentGold:     '#FFD700',
-  accentOrange:   '#FF6B35',
+  // Text on ink pill / inverse surface
+  inverse:        '#FFF7E8',
 
-  // Semantic
-  success:        '#00E676',
-  successMuted:   'rgba(0, 230, 118, 0.12)',
-  danger:         '#FF4057',
-  dangerMuted:    'rgba(255, 64, 87, 0.12)',
-  warning:        '#FFAB40',
+  // Accents — a vivid, Wrapped-style rainbow. Used sparsely on
+  // light surfaces; used edge-to-edge as story card washes.
+  red:            '#FF3B30',
+  amber:          '#FFB020',
+  mint:           '#1ED760',
+  sky:            '#0A84FF',
+  lilac:          '#BF5AF2',
+  coral:          '#FF6B5B',
+  cream:          '#F5E6D3',
 
-  // Service brand colors
-  spotify:        '#1DB954',
-  appleHealth:    '#FF375F',
+  // Tinted accent backgrounds for light surfaces
+  redTint:        'rgba(255, 59, 48, 0.12)',
+  amberTint:      'rgba(255, 176, 32, 0.14)',
+  mintTint:       'rgba(30, 215, 96, 0.14)',
+  skyTint:        'rgba(10, 132, 255, 0.12)',
+  lilacTint:      'rgba(191, 90, 242, 0.12)',
+
+  // Service marks
+  spotify:        '#1ED760',
+  appleHealth:    '#FA2D48',
   strava:         '#FC4C02',
-  goodreads:      '#5C4033',
-  steam:          '#66C0F4',
+  goodreads:      '#A67C2E',
+  steam:          '#2E6FBE',
+  fitbit:         '#00B0B9',
+  youtube:        '#FF0000',
+  lastfm:         '#D51007',
 
-  // Glass
-  glassFill:      'rgba(255, 255, 255, 0.03)',
-  glassStroke:    'rgba(255, 255, 255, 0.06)',
-  glassHighlight: 'rgba(255, 255, 255, 0.09)',
-  glassFill2:     'rgba(255, 255, 255, 0.05)',
+  // State
+  success:        '#17A34A',
+  danger:         '#D0331F',
 
-  // Overlay
-  overlay:        'rgba(6, 6, 12, 0.85)',
-  overlayLight:   'rgba(6, 6, 12, 0.5)',
+  // Overlays
+  wash:           'rgba(20, 16, 10, 0.32)',
+  washHeavy:      'rgba(20, 16, 10, 0.55)',
 } as const;
 
-// ─── Gradient Definitions ─────────────────────────────────────
-export const gradients = {
-  primary:      ['#6C5CE7', '#E040FB', '#00E5FF'] as const,
-  warm:         ['#6C5CE7', '#E040FB'] as const,
-  cool:         ['#00E5FF', '#6C5CE7'] as const,
-  fuchsiaCyan:  ['#E040FB', '#00E5FF'] as const,
-  fire:         ['#FF2D78', '#FF6B35', '#FFD700'] as const,
-  gold:         ['#FFD700', '#FF6B35'] as const,
-  spotify:      ['#1DB954', '#1ED760'] as const,
-  health:       ['#FF375F', '#FF6B8A'] as const,
-  strava:       ['#FC4C02', '#FF6B35'] as const,
-  goodreads:    ['#8B6914', '#C8A84E'] as const,
-  steam:        ['#1B2838', '#66C0F4'] as const,
-  ambient:      ['#0D0D18', '#12121F', '#0A0A14'] as const,
-  dark:         ['#06060C', '#0D0D18'] as const,
-} as const;
+// ─── Per-Story Accent Cycle ──────────────────────────────────
+// The story player cycles through these so each card is its own
+// editorial spread (not a uniform template).
+export const STORY_ACCENTS = [
+  { bg: '#FF3B30', fg: '#FFF7E8', name: 'red' },
+  { bg: '#1ED760', fg: '#141008', name: 'mint' },
+  { bg: '#FFB020', fg: '#141008', name: 'amber' },
+  { bg: '#BF5AF2', fg: '#FFF7E8', name: 'lilac' },
+  { bg: '#0A84FF', fg: '#FFF7E8', name: 'sky' },
+  { bg: '#F5E6D3', fg: '#141008', name: 'cream' },
+  { bg: '#FF6B5B', fg: '#141008', name: 'coral' },
+] as const;
 
-// ─── Typography ────────────────────────────────────────────────
-const fontFamily = Platform.select({
+export type StoryAccent = typeof STORY_ACCENTS[number];
+
+export function accentFor(index: number): StoryAccent {
+  return STORY_ACCENTS[index % STORY_ACCENTS.length];
+}
+
+// ─── Accent palette for confetti & UI accents (strings) ─────
+export const CONFETTI_COLORS = [
+  colors.red, colors.amber, colors.mint, colors.sky,
+  colors.lilac, colors.coral, colors.primary,
+] as const;
+
+// ─── Typography ──────────────────────────────────────────────
+const sans = Platform.select({
   ios: 'System',
   android: 'sans-serif',
   default: 'System',
 });
 
-const monoFamily = Platform.select({
+const mono = Platform.select({
   ios: 'Menlo',
   android: 'monospace',
   default: 'monospace',
 });
 
-export const typography = {
-  displayHero: {
-    fontFamily,
-    fontWeight: '900' as const,
-    fontSize: 80,
-    lineHeight: 84,
-    letterSpacing: -3,
+export const fonts = { sans, mono } as const;
+
+// IMPORTANT: for oversized text, keep lineHeight >= fontSize * 1.1 so
+// ascenders don't clip at the top (iOS especially with bold weights).
+// includeFontPadding:false removes Android's built-in descender padding.
+export const type = {
+  numeral: {
+    fontFamily: sans,
+    fontWeight: '800' as const,
+    fontSize: 180,
+    lineHeight: 198,
+    letterSpacing: -10,
+    includeFontPadding: false,
+  },
+  numeralLarge: {
+    fontFamily: sans,
+    fontWeight: '800' as const,
+    fontSize: 140,
+    lineHeight: 154,
+    letterSpacing: -7,
+    includeFontPadding: false,
+  },
+  numeralMedium: {
+    fontFamily: sans,
+    fontWeight: '800' as const,
+    fontSize: 96,
+    lineHeight: 106,
+    letterSpacing: -5,
+    includeFontPadding: false,
+  },
+
+  displayXL: {
+    fontFamily: sans,
+    fontWeight: '800' as const,
+    fontSize: 64,
+    lineHeight: 72,
+    letterSpacing: -2.5,
+    includeFontPadding: false,
   },
   display: {
-    fontFamily,
-    fontWeight: '900' as const,
-    fontSize: 56,
-    lineHeight: 60,
-    letterSpacing: -2,
-  },
-  displaySmall: {
-    fontFamily,
-    fontWeight: '800' as const,
-    fontSize: 44,
-    lineHeight: 48,
-    letterSpacing: -1.5,
-  },
-  h1: {
-    fontFamily,
-    fontWeight: '800' as const,
-    fontSize: 32,
-    lineHeight: 38,
-    letterSpacing: -0.5,
-  },
-  h2: {
-    fontFamily,
-    fontWeight: '700' as const,
-    fontSize: 24,
-    lineHeight: 30,
-    letterSpacing: -0.3,
-  },
-  h3: {
-    fontFamily,
-    fontWeight: '700' as const,
-    fontSize: 20,
-    lineHeight: 26,
-    letterSpacing: 0,
-  },
-  body: {
-    fontFamily,
-    fontWeight: '400' as const,
-    fontSize: 16,
-    lineHeight: 24,
-    letterSpacing: 0.1,
-  },
-  bodyMedium: {
-    fontFamily,
-    fontWeight: '500' as const,
-    fontSize: 16,
-    lineHeight: 24,
-    letterSpacing: 0.1,
-  },
-  bodySemibold: {
-    fontFamily,
-    fontWeight: '600' as const,
-    fontSize: 16,
-    lineHeight: 24,
-    letterSpacing: 0,
-  },
-  small: {
-    fontFamily,
-    fontWeight: '400' as const,
-    fontSize: 14,
-    lineHeight: 20,
-    letterSpacing: 0.1,
-  },
-  smallMedium: {
-    fontFamily,
-    fontWeight: '500' as const,
-    fontSize: 14,
-    lineHeight: 20,
-    letterSpacing: 0.1,
-  },
-  caption: {
-    fontFamily,
-    fontWeight: '500' as const,
-    fontSize: 12,
-    lineHeight: 16,
-    letterSpacing: 0.5,
-  },
-  captionBold: {
-    fontFamily,
-    fontWeight: '700' as const,
-    fontSize: 12,
-    lineHeight: 16,
-    letterSpacing: 0.5,
-  },
-  overline: {
-    fontFamily,
-    fontWeight: '700' as const,
-    fontSize: 11,
-    lineHeight: 14,
-    letterSpacing: 2.5,
-    textTransform: 'uppercase' as const,
-  },
-  mono: {
-    fontFamily: monoFamily,
-    fontWeight: '700' as const,
-    fontSize: 16,
-    lineHeight: 20,
-    letterSpacing: 0,
-  },
-  monoLarge: {
-    fontFamily: monoFamily,
+    fontFamily: sans,
     fontWeight: '800' as const,
     fontSize: 48,
-    lineHeight: 52,
+    lineHeight: 54,
+    letterSpacing: -1.6,
+    includeFontPadding: false,
+  },
+  displaySmall: {
+    fontFamily: sans,
+    fontWeight: '700' as const,
+    fontSize: 34,
+    lineHeight: 40,
     letterSpacing: -1,
+    includeFontPadding: false,
   },
-  monoHero: {
-    fontFamily: monoFamily,
-    fontWeight: '900' as const,
-    fontSize: 72,
-    lineHeight: 76,
-    letterSpacing: -2,
+
+  title: {
+    fontFamily: sans,
+    fontWeight: '700' as const,
+    fontSize: 22,
+    lineHeight: 28,
+    letterSpacing: -0.3,
+  },
+  titleSmall: {
+    fontFamily: sans,
+    fontWeight: '600' as const,
+    fontSize: 17,
+    lineHeight: 22,
+    letterSpacing: -0.2,
+  },
+
+  body: {
+    fontFamily: sans,
+    fontWeight: '400' as const,
+    fontSize: 17,
+    lineHeight: 24,
+    letterSpacing: -0.1,
+  },
+  bodyMedium: {
+    fontFamily: sans,
+    fontWeight: '500' as const,
+    fontSize: 17,
+    lineHeight: 24,
+    letterSpacing: -0.1,
+  },
+  bodySmall: {
+    fontFamily: sans,
+    fontWeight: '400' as const,
+    fontSize: 15,
+    lineHeight: 21,
+    letterSpacing: -0.05,
+  },
+  bodySmallMedium: {
+    fontFamily: sans,
+    fontWeight: '500' as const,
+    fontSize: 15,
+    lineHeight: 21,
+    letterSpacing: -0.05,
+  },
+
+  caption: {
+    fontFamily: sans,
+    fontWeight: '500' as const,
+    fontSize: 13,
+    lineHeight: 16,
+    letterSpacing: 0,
+  },
+  eyebrow: {
+    fontFamily: sans,
+    fontWeight: '600' as const,
+    fontSize: 11,
+    lineHeight: 14,
+    letterSpacing: 2.4,
+    textTransform: 'uppercase' as const,
+  },
+
+  mono: {
+    fontFamily: mono,
+    fontWeight: '500' as const,
+    fontSize: 15,
+    lineHeight: 20,
+    letterSpacing: 0,
   },
 } as const;
 
-// ─── Spacing ───────────────────────────────────────────────────
-export const spacing = {
-  xxs:  2,
-  xs:   4,
-  sm:   8,
-  md:   16,
-  lg:   24,
-  xl:   32,
-  xxl:  48,
-  xxxl: 64,
-  huge: 80,
+// ─── Spacing ─────────────────────────────────────────────────
+export const space = {
+  xxs: 2,
+  xs:  4,
+  sm:  8,
+  md:  16,
+  lg:  24,
+  xl:  32,
+  xxl: 48,
+  xxxl:64,
+  huge:96,
 } as const;
 
-// ─── Border Radius ────────────────────────────────────────────
+// ─── Radii ───────────────────────────────────────────────────
 export const radii = {
-  xs:   6,
+  xs:   4,
   sm:   8,
   md:   12,
   lg:   16,
-  xl:   20,
-  xxl:  24,
-  xxxl: 32,
-  full: 999,
+  xl:   22,
+  xxl:  28,
+  pill: 999,
 } as const;
 
-// ─── Animation Config ───────────────────────────────────────
+// ─── Motion ──────────────────────────────────────────────────
 export const motion = {
-  spring: {
-    damping: 15,
-    stiffness: 120,
-    mass: 0.8,
-  },
-  springBouncy: {
-    damping: 10,
-    stiffness: 140,
-    mass: 0.6,
-  },
-  springGentle: {
-    damping: 22,
-    stiffness: 60,
-    mass: 1,
-  },
-  springSnappy: {
-    damping: 18,
-    stiffness: 200,
-    mass: 0.5,
-  },
+  springSoft:   { damping: 22, stiffness: 140, mass: 1 },
+  springFirm:   { damping: 18, stiffness: 220, mass: 0.8 },
+  springPlayful:{ damping: 12, stiffness: 180, mass: 0.6 },
   duration: {
-    instant:  80,
-    fast:     150,
-    normal:   300,
-    slow:     500,
-    entrance: 600,
-    dramatic: 1000,
-    story:    1500,
+    instant: 120,
+    fast:    200,
+    base:    300,
+    slow:    450,
+    cinema:  700,
+    reveal:  1100,
   },
 } as const;
 
-// ─── Shadows ─────────────────────────────────────────────────
+// ─── Shadows (subtle, warm) ──────────────────────────────────
 export const shadows = {
-  card: {
-    shadowColor: '#000',
+  soft: {
+    shadowColor: '#2A1F0D',
     shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.35,
-    shadowRadius: 16,
-    elevation: 8,
-  },
-  elevated: {
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.45,
-    shadowRadius: 28,
-    elevation: 16,
-  },
-  glowPurple: {
-    shadowColor: colors.accentPurple,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.5,
-    shadowRadius: 24,
-    elevation: 12,
-  },
-  glowFuchsia: {
-    shadowColor: colors.accentFuchsia,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.45,
-    shadowRadius: 20,
-    elevation: 10,
-  },
-  glowCyan: {
-    shadowColor: colors.accentCyan,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.4,
+    shadowOpacity: 0.08,
     shadowRadius: 18,
+    elevation: 4,
+  },
+  lift: {
+    shadowColor: '#2A1F0D',
+    shadowOffset: { width: 0, height: 14 },
+    shadowOpacity: 0.12,
+    shadowRadius: 32,
     elevation: 10,
   },
-  subtle: {
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 6,
-    elevation: 3,
+  fab: {
+    shadowColor: '#141008',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.22,
+    shadowRadius: 22,
+    elevation: 14,
   },
 } as const;
 
-// ─── Glass Styles ─────────────────────────────────────────────
-export const glass = StyleSheet.create({
-  surface: {
-    backgroundColor: colors.glassFill,
-    borderRadius: radii.lg,
-    borderWidth: 1,
-    borderColor: colors.glassStroke,
-  },
-  surfaceElevated: {
-    backgroundColor: colors.glassFill2,
-    borderRadius: radii.xl,
-    borderWidth: 1,
-    borderColor: colors.glassHighlight,
-  },
-  card: {
-    backgroundColor: colors.glassFill,
-    borderRadius: radii.xxl,
-    borderWidth: 1,
-    borderColor: colors.glassStroke,
-    overflow: 'hidden' as const,
-  },
-});
+// ─── Services ────────────────────────────────────────────────
+/** How the app will authorize (UI labels; real flows wired later). */
+export type AuthKind =
+  | 'oauth2'
+  | 'oauth2_pkce'
+  | 'oauth1'
+  | 'healthkit'
+  | 'openid';
 
-// ─── Service Config ──────────────────────────────────────────
 export interface ServiceConfig {
   id: string;
   name: string;
-  emoji: string;
-  description: string;
+  tagline: string;
+  signal: string;
+  mark: string;
   color: string;
-  gradient: readonly [string, string];
-  iconBg: string;
+  accentKey: 'mint' | 'red' | 'amber' | 'sky' | 'lilac' | 'coral';
+  /** Remote logo (PNG/SVG via CDN). */
+  logoUri: string;
+  authKind: AuthKind;
 }
+
+export const AUTH_LABEL: Record<AuthKind, string> = {
+  oauth2: 'OAuth 2.0',
+  oauth2_pkce: 'OAuth 2.0 · PKCE',
+  oauth1: 'OAuth 1.0a',
+  healthkit: 'HealthKit',
+  openid: 'OpenID',
+};
 
 export const SERVICE_CONFIGS: ServiceConfig[] = [
   {
     id: 'spotify',
     name: 'Spotify',
-    emoji: '🎧',
-    description: 'Music · Podcasts · Listening',
+    tagline: 'Music and podcasts',
+    signal: 'Listening minutes',
+    mark: 'S',
     color: colors.spotify,
-    gradient: gradients.spotify,
-    iconBg: 'rgba(29, 185, 84, 0.12)',
+    accentKey: 'mint',
+    // Favicons load reliably on device; swap for bundled assets later if you prefer.
+    logoUri: 'https://www.google.com/s2/favicons?domain=spotify.com&sz=256',
+    authKind: 'oauth2_pkce',
   },
   {
     id: 'apple_health',
     name: 'Apple Health',
-    emoji: '❤️',
-    description: 'Steps · Workouts · Sleep',
+    tagline: 'Movement and sleep',
+    signal: 'Daily activity',
+    mark: 'H',
     color: colors.appleHealth,
-    gradient: gradients.health,
-    iconBg: 'rgba(255, 55, 95, 0.12)',
+    accentKey: 'red',
+    logoUri: 'https://www.google.com/s2/favicons?domain=apple.com&sz=256',
+    authKind: 'healthkit',
   },
   {
     id: 'strava',
     name: 'Strava',
-    emoji: '🏃',
-    description: 'Runs · Rides · Activities',
+    tagline: 'Runs, rides, activities',
+    signal: 'Distance covered',
+    mark: 'S',
     color: colors.strava,
-    gradient: gradients.strava,
-    iconBg: 'rgba(252, 76, 2, 0.12)',
+    accentKey: 'coral',
+    logoUri: 'https://www.google.com/s2/favicons?domain=strava.com&sz=256',
+    authKind: 'oauth2',
   },
   {
     id: 'goodreads',
     name: 'Goodreads',
-    emoji: '📚',
-    description: 'Books · Pages · Genres',
-    color: '#C8A84E',
-    gradient: gradients.goodreads,
-    iconBg: 'rgba(200, 168, 78, 0.12)',
+    tagline: 'Books and reading',
+    signal: 'Pages read',
+    mark: 'G',
+    color: colors.goodreads,
+    accentKey: 'amber',
+    logoUri: 'https://www.google.com/s2/favicons?domain=goodreads.com&sz=256',
+    authKind: 'oauth1',
   },
   {
     id: 'steam',
     name: 'Steam',
-    emoji: '🎮',
-    description: 'Games · Hours · Achievements',
+    tagline: 'Games and playtime',
+    signal: 'Hours played',
+    mark: 'S',
     color: colors.steam,
-    gradient: gradients.steam,
-    iconBg: 'rgba(102, 192, 244, 0.12)',
+    accentKey: 'sky',
+    logoUri: 'https://www.google.com/s2/favicons?domain=steampowered.com&sz=256',
+    authKind: 'openid',
+  },
+  {
+    id: 'fitbit',
+    name: 'Fitbit',
+    tagline: 'Steps, sleep, and heart rate',
+    signal: 'Daily summaries',
+    mark: 'F',
+    color: colors.fitbit,
+    accentKey: 'mint',
+    logoUri: 'https://www.google.com/s2/favicons?domain=fitbit.com&sz=256',
+    authKind: 'oauth2_pkce',
+  },
+  {
+    id: 'youtube',
+    name: 'YouTube',
+    tagline: 'Watch time and habits',
+    signal: 'Viewing minutes',
+    mark: '▶',
+    color: colors.youtube,
+    accentKey: 'red',
+    logoUri: 'https://www.google.com/s2/favicons?domain=youtube.com&sz=256',
+    authKind: 'oauth2',
+  },
+  {
+    id: 'lastfm',
+    name: 'Last.fm',
+    tagline: 'Scrobbles and top artists',
+    signal: 'Play counts',
+    mark: 'L',
+    color: colors.lastfm,
+    accentKey: 'coral',
+    logoUri: 'https://www.google.com/s2/favicons?domain=last.fm&sz=256',
+    authKind: 'oauth1',
   },
 ];
 
-// ─── Service Color Map (quick lookup) ────────────────────────
-export const serviceColors: Record<string, { primary: string; gradient: readonly [string, string]; bg: string }> = {};
-SERVICE_CONFIGS.forEach(s => {
-  serviceColors[s.id] = { primary: s.color, gradient: s.gradient, bg: s.iconBg };
+export const serviceById: Record<string, ServiceConfig> = Object.fromEntries(
+  SERVICE_CONFIGS.map(s => [s.id, s])
+) as Record<string, ServiceConfig>;
+
+// ─── Layout helpers ──────────────────────────────────────────
+export const layout = StyleSheet.create({
+  screen: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
+  hairlineTop: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.hairline,
+  },
+  hairlineBottom: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.hairline,
+  },
 });

@@ -3,290 +3,240 @@ import {
   View,
   Text,
   StyleSheet,
-  TouchableOpacity,
+  Pressable,
   Animated,
+  Easing,
   Dimensions,
   Share,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
-import { colors, typography, spacing, radii, shadows, motion, SERVICE_CONFIGS } from '../../lib/theme';
+import { colors, type, space, radii, motion } from '../../lib/theme';
+import Confetti from '../../components/Confetti';
 
 const { width: W, height: H } = Dimensions.get('window');
 
-export default function EndScreen() {
+export default function End() {
   const router = useRouter();
 
-  // Animations
-  const logoScale = useRef(new Animated.Value(0)).current;
-  const yearScale = useRef(new Animated.Value(0.5)).current;
-  const yearOpacity = useRef(new Animated.Value(0)).current;
-  const contentOpacity = useRef(new Animated.Value(0)).current;
-  const contentY = useRef(new Animated.Value(30)).current;
-  const btnOpacity = useRef(new Animated.Value(0)).current;
-  const btnY = useRef(new Animated.Value(20)).current;
-  const orbPulse = useRef(new Animated.Value(0)).current;
+  const mark = useRef(new Animated.Value(0)).current;
+  const year = useRef(new Animated.Value(0)).current;
+  const yearScale = useRef(new Animated.Value(1.15)).current;
+  const tag = useRef(new Animated.Value(0)).current;
+  const actions = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    // Ambient orb pulse
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(orbPulse, { toValue: 1, duration: 4000, useNativeDriver: true }),
-        Animated.timing(orbPulse, { toValue: 0, duration: 4000, useNativeDriver: true }),
-      ])
-    ).start();
-
-    // Entrance sequence
     Animated.sequence([
       Animated.delay(200),
-      Animated.spring(logoScale, { toValue: 1, damping: 10, stiffness: 100, useNativeDriver: true }),
+      Animated.timing(mark, {
+        toValue: 1,
+        duration: 500,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
       Animated.parallel([
-        Animated.spring(yearScale, { toValue: 1, damping: 8, stiffness: 80, useNativeDriver: true }),
-        Animated.timing(yearOpacity, { toValue: 1, duration: 500, useNativeDriver: true }),
+        Animated.timing(year, {
+          toValue: 1,
+          duration: 900,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+        Animated.spring(yearScale, { toValue: 1, ...motion.springSoft, useNativeDriver: true }),
       ]),
-      Animated.parallel([
-        Animated.timing(contentOpacity, { toValue: 1, duration: 400, useNativeDriver: true }),
-        Animated.spring(contentY, { toValue: 0, ...motion.springGentle, useNativeDriver: true }),
-      ]),
-      Animated.parallel([
-        Animated.timing(btnOpacity, { toValue: 1, duration: 300, useNativeDriver: true }),
-        Animated.spring(btnY, { toValue: 0, ...motion.springGentle, useNativeDriver: true }),
-      ]),
+      Animated.timing(tag, {
+        toValue: 1,
+        duration: 500,
+        useNativeDriver: true,
+      }),
+      Animated.timing(actions, {
+        toValue: 1,
+        duration: 400,
+        useNativeDriver: true,
+      }),
     ]).start();
   }, []);
 
-  async function handleShare() {
+  async function share() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     try {
       await Share.share({
-        message: `My 2026 Wrapped — relive your year in stories. Made with Wrapped ✨`,
+        message: 'My 2026, wrapped. → wrapped.app',
       });
     } catch {}
   }
 
-  function handleRestart() {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  function restart() {
+    Haptics.selectionAsync();
     router.replace('/(tabs)/dashboard');
   }
 
+  function makeAnother() {
+    Haptics.selectionAsync();
+    router.replace('/wizard');
+  }
+
   return (
-    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
-      {/* Background orbs */}
-      <Animated.View
-        style={[
-          styles.orb1,
-          {
-            opacity: orbPulse.interpolate({ inputRange: [0, 1], outputRange: [0.06, 0.14] }),
-            transform: [{ translateY: orbPulse.interpolate({ inputRange: [0, 1], outputRange: [0, -30] }) }],
-          },
-        ]}
-      />
-      <Animated.View
-        style={[
-          styles.orb2,
-          {
-            opacity: orbPulse.interpolate({ inputRange: [0, 1], outputRange: [0.04, 0.1] }),
-            transform: [{ translateX: orbPulse.interpolate({ inputRange: [0, 1], outputRange: [0, 20] }) }],
-          },
-        ]}
-      />
-
-      <View style={styles.content}>
-        {/* Logo badge */}
-        <Animated.View style={[styles.logoArea, { transform: [{ scale: logoScale }] }]}>
-          <LinearGradient
-            colors={[colors.accentPurple, colors.accentFuchsia]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.logoBadge}
-          >
-            <Text style={styles.logoText}>W</Text>
-          </LinearGradient>
-        </Animated.View>
-
-        {/* Year */}
-        <Animated.Text
+    <SafeAreaView style={styles.screen} edges={['top', 'bottom']}>
+      <Confetti mode="burst" count={40} seed={42} />
+      <View style={styles.body}>
+        <Animated.View
           style={[
-            styles.yearText,
+            styles.markRow,
             {
-              opacity: yearOpacity,
-              transform: [{ scale: yearScale }],
+              opacity: mark,
+              transform: [{
+                translateY: mark.interpolate({ inputRange: [0, 1], outputRange: [12, 0] }),
+              }],
             },
           ]}
         >
-          2026
-        </Animated.Text>
+          <Text style={styles.mark}>wrapped.</Text>
+          <Text style={styles.markMeta}>a year, in review</Text>
+        </Animated.View>
 
-        {/* Subtitle */}
+        <View style={styles.yearWrap}>
+          <Animated.Text
+            style={[
+              styles.year,
+              {
+                opacity: year,
+                transform: [{ scale: yearScale }],
+              },
+            ]}
+          >
+            2026
+          </Animated.Text>
+        </View>
+
         <Animated.View
           style={{
-            opacity: contentOpacity,
-            transform: [{ translateY: contentY }],
-            alignItems: 'center',
+            opacity: tag,
+            transform: [{
+              translateY: tag.interpolate({ inputRange: [0, 1], outputRange: [16, 0] }),
+            }],
           }}
         >
-          <Text style={styles.subtitle}>Your year, unwrapped.</Text>
-
-          {/* Service icons */}
-          <View style={styles.serviceRow}>
-            {SERVICE_CONFIGS.map((svc, i) => (
-              <View key={svc.id} style={[styles.serviceBadge, { backgroundColor: svc.iconBg }]}>
-                <Text style={styles.serviceEmoji}>{svc.emoji}</Text>
-              </View>
-            ))}
-          </View>
-        </Animated.View>
-
-        {/* Action Buttons */}
-        <Animated.View
-          style={[
-            styles.actions,
-            {
-              opacity: btnOpacity,
-              transform: [{ translateY: btnY }],
-            },
-          ]}
-        >
-          <TouchableOpacity style={styles.shareBtn} onPress={handleShare} activeOpacity={0.85}>
-            <LinearGradient
-              colors={[colors.accentPurple, colors.accentFuchsia]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={styles.shareBtnGradient}
-            >
-              <Text style={styles.shareBtnText}>Share Your Wrapped</Text>
-            </LinearGradient>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.secondaryBtn} onPress={handleRestart} activeOpacity={0.7}>
-            <Text style={styles.secondaryBtnText}>Start Over</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.tertiaryBtn} activeOpacity={0.7}>
-            <Text style={styles.tertiaryBtnText}>Save as PDF</Text>
-          </TouchableOpacity>
+          <Text style={styles.tagTitle}>That's a wrap.</Text>
+          <Text style={styles.tag}>
+            Thanks for watching. Come back next year, or make a new recap anytime.
+          </Text>
         </Animated.View>
       </View>
+
+      <Animated.View style={[styles.actions, { opacity: actions }]}>
+        <Pressable
+          onPress={share}
+          style={({ pressed }) => [styles.primary, pressed && styles.pressed]}
+        >
+          <Text style={styles.primaryText}>Share</Text>
+        </Pressable>
+        <Pressable
+          onPress={makeAnother}
+          style={({ pressed }) => [styles.secondary, pressed && styles.pressed]}
+        >
+          <Text style={styles.secondaryText}>Make another</Text>
+        </Pressable>
+        <Pressable onPress={restart} hitSlop={10} style={styles.homeLink}>
+          <Text style={styles.homeLinkText}>Back to home</Text>
+        </Pressable>
+      </Animated.View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  screen: {
     flex: 1,
     backgroundColor: colors.background,
-    overflow: 'hidden',
+    paddingHorizontal: space.lg,
   },
-  orb1: {
-    position: 'absolute',
-    width: W * 1.4,
-    height: W * 1.4,
-    borderRadius: W,
-    backgroundColor: colors.accentPurple,
-    top: -W * 0.5,
-    left: -W * 0.3,
-  },
-  orb2: {
-    position: 'absolute',
-    width: W * 0.9,
-    height: W * 0.9,
-    borderRadius: W,
-    backgroundColor: colors.accentCyan,
-    bottom: -W * 0.2,
-    right: -W * 0.3,
-  },
-  content: {
+  body: {
     flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: spacing.xl,
+    paddingTop: space.md,
   },
-  logoArea: {
-    marginBottom: spacing.xl,
-    ...shadows.glowPurple,
-  },
-  logoBadge: {
-    width: 72,
-    height: 72,
-    borderRadius: 22,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  logoText: {
-    fontSize: 36,
-    fontWeight: '900',
-    color: '#fff',
-    letterSpacing: -2,
-  },
-  yearText: {
-    fontSize: 96,
-    fontWeight: '900',
-    color: colors.primary,
-    letterSpacing: -6,
-    lineHeight: 100,
-    marginBottom: spacing.sm,
-  },
-  subtitle: {
-    ...typography.body,
-    color: colors.secondary,
-    marginBottom: spacing.xxl,
-    letterSpacing: 0.5,
-  },
-  serviceRow: {
+  markRow: {
     flexDirection: 'row',
-    gap: spacing.md,
-    marginBottom: spacing.xxl,
+    justifyContent: 'space-between',
+    alignItems: 'baseline',
+    paddingTop: space.md,
   },
-  serviceBadge: {
-    width: 48,
-    height: 48,
-    borderRadius: 16,
-    alignItems: 'center',
+  mark: {
+    ...type.title,
+    color: colors.primary,
+    fontWeight: '700',
+    letterSpacing: -0.4,
+  },
+  markMeta: {
+    ...type.eyebrow,
+    color: colors.tertiary,
+  },
+  yearWrap: {
+    flex: 1,
     justifyContent: 'center',
+    marginVertical: space.xl,
   },
-  serviceEmoji: {
-    fontSize: 22,
+  year: {
+    ...type.numeral,
+    color: colors.primary,
+    fontSize: 240,
+    lineHeight: 268,
+    letterSpacing: -14,
+    marginLeft: -8,
+    paddingTop: 10,
+  },
+  tagTitle: {
+    ...type.display,
+    color: colors.primary,
+    marginBottom: space.sm,
+  },
+  tag: {
+    ...type.body,
+    color: colors.secondary,
+    maxWidth: 360,
+    marginBottom: space.xl,
   },
   actions: {
-    width: '100%',
-    gap: spacing.md,
+    paddingBottom: space.md,
+    gap: space.sm,
   },
-  shareBtn: {
-    borderRadius: radii.full,
-    overflow: 'hidden',
-    ...shadows.glowFuchsia,
-  },
-  shareBtnGradient: {
-    paddingVertical: 18,
-    borderRadius: radii.full,
+  primary: {
+    height: 56,
+    borderRadius: radii.pill,
+    backgroundColor: colors.primary,
     alignItems: 'center',
+    justifyContent: 'center',
   },
-  shareBtnText: {
-    ...typography.bodySemibold,
-    color: '#fff',
-    fontSize: 17,
-    letterSpacing: 0.3,
+  primaryText: {
+    ...type.bodyMedium,
+    color: colors.inverse,
+    fontWeight: '600',
+    letterSpacing: -0.1,
   },
-  secondaryBtn: {
-    borderWidth: 1,
-    borderColor: colors.borderLight,
-    paddingVertical: 16,
-    borderRadius: radii.full,
+  secondary: {
+    height: 56,
+    borderRadius: radii.pill,
+    backgroundColor: 'transparent',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.hairlineStrong,
     alignItems: 'center',
+    justifyContent: 'center',
   },
-  secondaryBtnText: {
-    ...typography.bodyMedium,
-    color: colors.secondary,
+  secondaryText: {
+    ...type.bodyMedium,
+    color: colors.primary,
+    letterSpacing: -0.1,
   },
-  tertiaryBtn: {
-    paddingVertical: 12,
+  pressed: {
+    opacity: 0.88,
+    transform: [{ scale: 0.98 }],
+  },
+  homeLink: {
     alignItems: 'center',
+    paddingVertical: 10,
   },
-  tertiaryBtnText: {
-    ...typography.caption,
+  homeLinkText: {
+    ...type.caption,
     color: colors.tertiary,
-    letterSpacing: 1,
   },
 });

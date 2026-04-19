@@ -1,494 +1,368 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   Animated,
   Dimensions,
-  TouchableOpacity,
   Pressable,
+  Easing,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
-import { colors, gradients, typography, spacing, radii, motion, shadows } from '../lib/theme';
+import { colors, type, space, radii, motion } from '../lib/theme';
+import Confetti from '../components/Confetti';
 
 const { width: W, height: H } = Dimensions.get('window');
 
-const ONBOARD_SLIDES = [
+// Three plain steps: what it is → what you do → privacy. No jargon.
+const CHAPTERS = [
   {
-    title: 'Connect\nAnything',
-    body: 'Spotify, Strava, Apple Health, Goodreads, Steam — your entire year, unified.',
-    emoji: '⚡',
-    accentColor: colors.accentPurple,
+    number: '01',
+    eyebrow: 'What is Wrapped?',
+    line: 'Your year,\none screen at a time.',
+    detail: 'We turn stats from apps you already use into a swipeable story — like a year in review.',
   },
   {
-    title: 'Cinematic\nStories',
-    body: 'Swipe through a beautiful recap with your top stats, lists, and AI-powered insights.',
-    emoji: '✨',
-    accentColor: colors.accentFuchsia,
+    number: '02',
+    eyebrow: 'How it works',
+    line: 'Link apps.\nHit the + button.',
+    detail: 'Connect accounts on the Accounts tab, then tap the + in the bar to pick a template and generate a recap.',
   },
   {
-    title: 'Privacy\nFirst',
-    body: 'We store only aggregated stats. Your raw data is never saved. Period.',
-    emoji: '🔒',
-    accentColor: colors.accentCyan,
+    number: '03',
+    eyebrow: 'Privacy',
+    line: 'We only keep\nsummaries.',
+    detail: 'Raw data from services is not stored on our servers. You can disconnect anytime.',
   },
 ];
 
-export default function SplashOnboarding() {
+export default function Entry() {
   const router = useRouter();
   const [phase, setPhase] = useState<'splash' | 'onboard'>('splash');
   const [step, setStep] = useState(0);
 
-  // Splash animations
-  const logoScale = useRef(new Animated.Value(0.3)).current;
-  const logoOpacity = useRef(new Animated.Value(0)).current;
-  const logoRotate = useRef(new Animated.Value(0)).current;
-  const taglineOpacity = useRef(new Animated.Value(0)).current;
-  const taglineY = useRef(new Animated.Value(20)).current;
+  // Splash: wordmark fades up, a thin rule draws across the width.
+  const markOpacity = useRef(new Animated.Value(0)).current;
+  const markY = useRef(new Animated.Value(24)).current;
+  const ruleWidth = useRef(new Animated.Value(0)).current;
+  const yearOpacity = useRef(new Animated.Value(0)).current;
 
-  // Onboarding animations
-  const slideOpacity = useRef(new Animated.Value(0)).current;
-  const slideY = useRef(new Animated.Value(40)).current;
-  const emojiScale = useRef(new Animated.Value(0)).current;
-  const ctaOpacity = useRef(new Animated.Value(0)).current;
-  const ctaY = useRef(new Animated.Value(30)).current;
+  // Onboarding chapter transitions
+  const chapterOpacity = useRef(new Animated.Value(0)).current;
+  const chapterY = useRef(new Animated.Value(30)).current;
+  const numberScale = useRef(new Animated.Value(1.1)).current;
 
-  // Background orb animations
-  const orb1 = useRef(new Animated.Value(0)).current;
-  const orb2 = useRef(new Animated.Value(0)).current;
-  const orb3 = useRef(new Animated.Value(0)).current;
-
-  // Splash entrance
   useEffect(() => {
-    // Floating orbs
-    const loopOrb = (anim: Animated.Value, dur: number) => {
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(anim, { toValue: 1, duration: dur, useNativeDriver: true }),
-          Animated.timing(anim, { toValue: 0, duration: dur, useNativeDriver: true }),
-        ])
-      ).start();
-    };
-    loopOrb(orb1, 4000);
-    loopOrb(orb2, 5500);
-    loopOrb(orb3, 7000);
-
-    // Logo entrance sequence
     Animated.sequence([
-      Animated.delay(300),
+      Animated.delay(180),
       Animated.parallel([
-        Animated.spring(logoScale, { toValue: 1, ...motion.springBouncy, useNativeDriver: true }),
-        Animated.timing(logoOpacity, { toValue: 1, duration: 600, useNativeDriver: true }),
-        Animated.timing(logoRotate, { toValue: 1, duration: 800, useNativeDriver: true }),
+        Animated.timing(markOpacity, {
+          toValue: 1,
+          duration: 700,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+        Animated.spring(markY, { toValue: 0, ...motion.springSoft, useNativeDriver: true }),
       ]),
-      Animated.delay(200),
-      Animated.parallel([
-        Animated.timing(taglineOpacity, { toValue: 1, duration: 500, useNativeDriver: true }),
-        Animated.spring(taglineY, { toValue: 0, ...motion.springGentle, useNativeDriver: true }),
-      ]),
-      Animated.delay(800),
+      Animated.timing(ruleWidth, {
+        toValue: 1,
+        duration: 700,
+        easing: Easing.inOut(Easing.cubic),
+        useNativeDriver: false,
+      }),
+      Animated.timing(yearOpacity, {
+        toValue: 1,
+        duration: 400,
+        useNativeDriver: true,
+      }),
+      Animated.delay(900),
     ]).start(() => {
       setPhase('onboard');
     });
   }, []);
 
-  // Onboarding slide entrance
   useEffect(() => {
     if (phase !== 'onboard') return;
-
-    slideOpacity.setValue(0);
-    slideY.setValue(40);
-    emojiScale.setValue(0);
-    ctaOpacity.setValue(0);
-    ctaY.setValue(30);
-
-    Animated.sequence([
-      Animated.parallel([
-        Animated.timing(slideOpacity, { toValue: 1, duration: 400, useNativeDriver: true }),
-        Animated.spring(slideY, { toValue: 0, ...motion.spring, useNativeDriver: true }),
-      ]),
-      Animated.spring(emojiScale, { toValue: 1, ...motion.springBouncy, useNativeDriver: true }),
-      Animated.parallel([
-        Animated.timing(ctaOpacity, { toValue: 1, duration: 300, useNativeDriver: true }),
-        Animated.spring(ctaY, { toValue: 0, ...motion.springGentle, useNativeDriver: true }),
-      ]),
+    chapterOpacity.setValue(0);
+    chapterY.setValue(30);
+    numberScale.setValue(1.08);
+    Animated.parallel([
+      Animated.timing(chapterOpacity, {
+        toValue: 1,
+        duration: 500,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+      Animated.spring(chapterY, { toValue: 0, ...motion.springSoft, useNativeDriver: true }),
+      Animated.spring(numberScale, { toValue: 1, ...motion.springSoft, useNativeDriver: true }),
     ]).start();
   }, [phase, step]);
 
-  const animateOut = useCallback((cb: () => void) => {
-    Animated.parallel([
-      Animated.timing(slideOpacity, { toValue: 0, duration: 200, useNativeDriver: true }),
-      Animated.timing(slideY, { toValue: -30, duration: 200, useNativeDriver: true }),
-      Animated.timing(emojiScale, { toValue: 0.5, duration: 150, useNativeDriver: true }),
-    ]).start(cb);
-  }, []);
-
-  function goNext() {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    if (step >= ONBOARD_SLIDES.length - 1) {
-      router.replace('/(tabs)/services');
+  function advance() {
+    Haptics.selectionAsync();
+    if (step >= CHAPTERS.length - 1) {
+      router.replace('/(tabs)/dashboard');
       return;
     }
-    animateOut(() => setStep(s => s + 1));
+    Animated.parallel([
+      Animated.timing(chapterOpacity, {
+        toValue: 0,
+        duration: 220,
+        useNativeDriver: true,
+      }),
+      Animated.timing(chapterY, {
+        toValue: -24,
+        duration: 220,
+        useNativeDriver: true,
+      }),
+    ]).start(() => setStep(s => s + 1));
   }
 
   function skip() {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    router.replace('/(tabs)/services');
+    Haptics.selectionAsync();
+    router.replace('/(tabs)/dashboard');
   }
 
-  const slide = ONBOARD_SLIDES[step];
-  const logoSpin = logoRotate.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['-15deg', '0deg'],
-  });
-
-  return (
-    <View style={styles.container}>
-      {/* Background gradient orbs */}
-      <Animated.View
-        style={[
-          styles.orb,
-          styles.orb1,
-          {
-            opacity: orb1.interpolate({ inputRange: [0, 1], outputRange: [0.08, 0.18] }),
-            transform: [{ translateY: orb1.interpolate({ inputRange: [0, 1], outputRange: [0, -50] }) }],
-          },
-        ]}
-      />
-      <Animated.View
-        style={[
-          styles.orb,
-          styles.orb2,
-          {
-            opacity: orb2.interpolate({ inputRange: [0, 1], outputRange: [0.05, 0.12] }),
-            transform: [{ translateX: orb2.interpolate({ inputRange: [0, 1], outputRange: [0, 30] }) }],
-          },
-        ]}
-      />
-      <Animated.View
-        style={[
-          styles.orb,
-          styles.orb3,
-          {
-            opacity: orb3.interpolate({ inputRange: [0, 1], outputRange: [0.04, 0.1] }),
-            transform: [{ translateY: orb3.interpolate({ inputRange: [0, 1], outputRange: [0, 40] }) }],
-          },
-        ]}
-      />
-
-      {phase === 'splash' ? (
-        /* ═══ SPLASH ═══ */
-        <View style={styles.splashCenter}>
-          <Animated.View
-            style={[
-              styles.logoBadge,
-              {
-                opacity: logoOpacity,
-                transform: [
-                  { scale: logoScale },
-                  { rotate: logoSpin },
-                ],
-              },
-            ]}
-          >
-            <LinearGradient
-              colors={[colors.accentPurple, colors.accentFuchsia]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.logoBadgeGradient}
-            >
-              <Text style={styles.logoLetter}>W</Text>
-            </LinearGradient>
-          </Animated.View>
-
-          <Animated.View style={{ opacity: taglineOpacity, transform: [{ translateY: taglineY }] }}>
-            <Text style={styles.logoTitle}>Wrapped</Text>
-            <Text style={styles.logoSubtitle}>Your year, unwrapped.</Text>
-          </Animated.View>
-        </View>
-      ) : (
-        /* ═══ ONBOARDING ═══ */
-        <View style={styles.onboardContainer}>
-          {/* Top: mini logo */}
-          <View style={styles.onboardHeader}>
-            <View style={styles.miniLogoBadge}>
-              <LinearGradient
-                colors={[colors.accentPurple, colors.accentFuchsia]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.miniLogoGradient}
-              >
-                <Text style={styles.miniLogoText}>W</Text>
-              </LinearGradient>
-            </View>
+  if (phase === 'splash') {
+    return (
+      <View style={styles.screen}>
+        <Confetti mode="drift" count={42} bandHeight={H} seed={11} />
+        <SafeAreaView style={styles.splashSafe} edges={['top', 'bottom']}>
+          <View style={styles.splashTop}>
+            <Animated.Text style={[styles.year, { opacity: yearOpacity }]}>
+              2026
+            </Animated.Text>
           </View>
 
-          {/* Center: slide content */}
-          <View style={styles.slideCenter}>
+          <View style={styles.splashCenter}>
             <Animated.Text
               style={[
-                styles.slideEmoji,
+                styles.wordmark,
                 {
-                  transform: [{ scale: emojiScale }],
+                  opacity: markOpacity,
+                  transform: [{ translateY: markY }],
                 },
               ]}
             >
-              {slide.emoji}
+              wrapped.
             </Animated.Text>
-
-            <Animated.View
-              style={{
-                opacity: slideOpacity,
-                transform: [{ translateY: slideY }],
-              }}
-            >
-              <Text style={styles.slideTitle}>{slide.title}</Text>
-              <Text style={styles.slideBody}>{slide.body}</Text>
-            </Animated.View>
           </View>
 
-          {/* Progress dots */}
-          <View style={styles.dotsRow}>
-            {ONBOARD_SLIDES.map((_, i) => (
+          <View style={styles.splashBottom}>
+            <Animated.View
+              style={[
+                styles.rule,
+                {
+                  width: ruleWidth.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: ['0%', '100%'],
+                  }),
+                },
+              ]}
+            />
+            <Animated.Text style={[styles.splashTag, { opacity: yearOpacity }]}>
+              A year, in review.
+            </Animated.Text>
+          </View>
+        </SafeAreaView>
+      </View>
+    );
+  }
+
+  const chapter = CHAPTERS[step];
+  const isLast = step === CHAPTERS.length - 1;
+
+  return (
+    <View style={styles.screen}>
+      <SafeAreaView style={styles.onboardSafe} edges={['top', 'bottom']}>
+        {/* Top bar: chapter counter + skip */}
+        <View style={styles.topBar}>
+          <Text style={styles.topBarLabel}>
+            {String(step + 1).padStart(2, '0')} / {String(CHAPTERS.length).padStart(2, '0')}
+          </Text>
+          {!isLast && (
+            <Pressable onPress={skip} hitSlop={12}>
+              <Text style={styles.topBarAction}>Skip</Text>
+            </Pressable>
+          )}
+        </View>
+
+        {/* Chapter body */}
+        <View style={styles.chapterBody}>
+          <Animated.View
+            style={{
+              opacity: chapterOpacity,
+              transform: [{ translateY: chapterY }],
+            }}
+          >
+            <Animated.Text
+              style={[styles.chapterNumber, { transform: [{ scale: numberScale }] }]}
+            >
+              {chapter.number}
+            </Animated.Text>
+            <Text style={styles.chapterEyebrow}>{chapter.eyebrow}</Text>
+            <Text style={styles.chapterLine}>{chapter.line}</Text>
+            <Text style={styles.chapterDetail}>{chapter.detail}</Text>
+          </Animated.View>
+        </View>
+
+        {/* Bottom: progress rule + CTA */}
+        <View style={styles.onboardFooter}>
+          <View style={styles.progressTrack}>
+            {CHAPTERS.map((_, i) => (
               <View
                 key={i}
                 style={[
-                  styles.dot,
-                  i === step && [styles.dotActive, { backgroundColor: slide.accentColor }],
-                  i < step && styles.dotDone,
+                  styles.progressSegment,
+                  i <= step && styles.progressSegmentActive,
                 ]}
               />
             ))}
           </View>
 
-          {/* Bottom CTA */}
-          <Animated.View
-            style={[
-              styles.onboardFooter,
-              { opacity: ctaOpacity, transform: [{ translateY: ctaY }] },
-            ]}
+          <Pressable
+            onPress={advance}
+            style={({ pressed }) => [styles.cta, pressed && styles.ctaPressed]}
           >
-            <TouchableOpacity
-              style={styles.ctaButton}
-              onPress={goNext}
-              activeOpacity={0.85}
-            >
-              <LinearGradient
-                colors={[colors.accentPurple, colors.accentFuchsia]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={styles.ctaGradient}
-              >
-                <Text style={styles.ctaText}>
-                  {step < ONBOARD_SLIDES.length - 1 ? 'Continue' : "Let's Go"}
-                </Text>
-              </LinearGradient>
-            </TouchableOpacity>
-
-            {step < ONBOARD_SLIDES.length - 1 && (
-              <Pressable onPress={skip} hitSlop={16} style={styles.skipBtn}>
-                <Text style={styles.skipText}>Skip</Text>
-              </Pressable>
-            )}
-          </Animated.View>
+            <Text style={styles.ctaText}>
+              {isLast ? 'Get started' : 'Continue'}
+            </Text>
+          </Pressable>
         </View>
-      )}
+      </SafeAreaView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  screen: {
     flex: 1,
     backgroundColor: colors.background,
-    overflow: 'hidden',
   },
 
-  // ─── Background Orbs ─────────────────────────────
-  orb: {
-    position: 'absolute',
-    borderRadius: 999,
+  // ─── Splash ──────────────────────────────────────────────
+  splashSafe: {
+    flex: 1,
+    paddingHorizontal: space.lg,
   },
-  orb1: {
-    width: W * 1.2,
-    height: W * 1.2,
-    backgroundColor: colors.accentPurple,
-    top: -W * 0.4,
-    left: -W * 0.3,
+  splashTop: {
+    paddingTop: space.lg,
   },
-  orb2: {
-    width: W * 0.8,
-    height: W * 0.8,
-    backgroundColor: colors.accentFuchsia,
-    bottom: -W * 0.2,
-    right: -W * 0.3,
+  year: {
+    ...type.eyebrow,
+    color: colors.tertiary,
   },
-  orb3: {
-    width: W * 0.5,
-    height: W * 0.5,
-    backgroundColor: colors.accentCyan,
-    top: H * 0.4,
-    left: -W * 0.15,
-  },
-
-  // ─── Splash ─────────────────────────────────────
   splashCenter: {
     flex: 1,
-    alignItems: 'center',
     justifyContent: 'center',
   },
-  logoBadge: {
-    width: 100,
-    height: 100,
-    borderRadius: 28,
-    marginBottom: 24,
-    ...shadows.glowPurple,
-  },
-  logoBadgeGradient: {
-    width: 100,
-    height: 100,
-    borderRadius: 28,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  logoLetter: {
-    fontSize: 52,
-    fontWeight: '900',
-    color: '#fff',
-    letterSpacing: -3,
-  },
-  logoTitle: {
-    ...typography.h1,
-    fontSize: 36,
+  wordmark: {
+    ...type.displayXL,
     color: colors.primary,
-    textAlign: 'center',
-    letterSpacing: -1,
-    marginBottom: 6,
+    fontSize: 84,
+    lineHeight: 96,
+    letterSpacing: -4,
+    paddingTop: 4,
   },
-  logoSubtitle: {
-    ...typography.body,
+  splashBottom: {
+    paddingBottom: space.lg,
+    gap: space.md,
+  },
+  rule: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: colors.primary,
+  },
+  splashTag: {
+    ...type.bodySmall,
     color: colors.secondary,
-    textAlign: 'center',
-    letterSpacing: 0.5,
   },
 
-  // ─── Onboarding ─────────────────────────────────
-  onboardContainer: {
+  // ─── Onboarding ──────────────────────────────────────────
+  onboardSafe: {
     flex: 1,
-    paddingTop: 70,
-    paddingBottom: 50,
+    paddingHorizontal: space.lg,
   },
-  onboardHeader: {
-    alignItems: 'center',
-    marginBottom: spacing.xl,
-  },
-  miniLogoBadge: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
-    ...shadows.glowPurple,
-  },
-  miniLogoGradient: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  miniLogoText: {
-    fontSize: 22,
-    fontWeight: '900',
-    color: '#fff',
-    letterSpacing: -1,
-  },
-
-  slideCenter: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: spacing.xl,
-  },
-  slideEmoji: {
-    fontSize: 72,
-    marginBottom: 28,
-  },
-  slideTitle: {
-    ...typography.display,
-    fontSize: 42,
-    lineHeight: 46,
-    color: colors.primary,
-    textAlign: 'center',
-    marginBottom: 16,
-    letterSpacing: -1.5,
-  },
-  slideBody: {
-    ...typography.body,
-    color: colors.secondary,
-    textAlign: 'center',
-    lineHeight: 26,
-    maxWidth: 300,
-    letterSpacing: 0.2,
-  },
-
-  // ─── Dots ─────────────────────────────────────
-  dotsRow: {
+  topBar: {
     flexDirection: 'row',
-    justifyContent: 'center',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    gap: 10,
-    marginBottom: 32,
+    paddingTop: space.lg,
+    paddingBottom: space.md,
   },
-  dot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: colors.borderLight,
+  topBarLabel: {
+    ...type.eyebrow,
+    color: colors.tertiary,
   },
-  dotActive: {
-    width: 28,
-    borderRadius: 4,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.6,
-    shadowRadius: 10,
-  },
-  dotDone: {
-    backgroundColor: colors.accentCyan,
-    opacity: 0.6,
+  topBarAction: {
+    ...type.bodySmallMedium,
+    color: colors.secondary,
   },
 
-  // ─── Footer ─────────────────────────────────────
+  chapterBody: {
+    flex: 1,
+    justifyContent: 'center',
+    paddingBottom: space.huge,
+  },
+  chapterNumber: {
+    ...type.numeral,
+    color: colors.primary,
+    fontSize: 200,
+    lineHeight: 224,
+    letterSpacing: -12,
+    marginLeft: -6,
+    marginBottom: space.lg,
+    paddingTop: 8,
+  },
+  chapterEyebrow: {
+    ...type.eyebrow,
+    color: colors.primary,
+    marginBottom: space.md,
+  },
+  chapterLine: {
+    ...type.displayXL,
+    color: colors.primary,
+    marginBottom: space.lg,
+  },
+  chapterDetail: {
+    ...type.body,
+    color: colors.secondary,
+    maxWidth: 340,
+  },
+
   onboardFooter: {
-    alignItems: 'center',
-    paddingHorizontal: spacing.xl,
-    gap: 16,
+    paddingBottom: space.md,
+    gap: space.lg,
   },
-  ctaButton: {
-    width: '100%',
-    borderRadius: radii.full,
-    overflow: 'hidden',
-    ...shadows.glowFuchsia,
+  progressTrack: {
+    flexDirection: 'row',
+    gap: 6,
   },
-  ctaGradient: {
-    paddingVertical: 18,
+  progressSegment: {
+    flex: 1,
+    height: 2,
+    backgroundColor: colors.hairline,
+    borderRadius: 1,
+  },
+  progressSegmentActive: {
+    backgroundColor: colors.primary,
+  },
+  cta: {
+    height: 56,
+    borderRadius: radii.pill,
+    backgroundColor: colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: radii.full,
+  },
+  ctaPressed: {
+    opacity: 0.85,
+    transform: [{ scale: 0.98 }],
   },
   ctaText: {
-    ...typography.bodySemibold,
-    color: '#fff',
-    fontSize: 17,
-    letterSpacing: 0.5,
-  },
-  skipBtn: {
-    paddingVertical: 8,
-  },
-  skipText: {
-    ...typography.caption,
-    color: colors.tertiary,
-    letterSpacing: 1,
+    ...type.bodyMedium,
+    color: colors.inverse,
+    fontWeight: '600',
+    letterSpacing: -0.1,
   },
 });

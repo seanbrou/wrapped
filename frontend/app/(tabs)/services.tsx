@@ -1,65 +1,167 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
-  TouchableOpacity,
-  RefreshControl,
-  Animated,
   Pressable,
+  Animated,
+  RefreshControl,
+  ActivityIndicator,
+  Easing,
   Dimensions,
+  Image,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { LinearGradient } from 'expo-linear-gradient';
+import Svg, { Circle as SvgCircle } from 'react-native-svg';
+import Reanimated, {
+  useSharedValue,
+  useAnimatedProps,
+  withTiming,
+  cancelAnimation,
+  Easing as ReanimatedEasing,
+} from 'react-native-reanimated';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import {
-  colors, typography, spacing, radii, shadows, motion, glass,
-  SERVICE_CONFIGS, serviceColors, type ServiceConfig,
+  colors, type, space, radii, motion,
+  SERVICE_CONFIGS, AUTH_LABEL, type ServiceConfig,
 } from '../../lib/theme';
-import { api, ServiceInfo } from '../../lib/api';
+import { api } from '../../lib/api';
+import LiquidGlass from '../../components/LiquidGlass';
+import Confetti from '../../components/Confetti';
 
-const { width: W } = Dimensions.get('window');
-const CARD_GAP = 14;
-const CARD_W = (W - spacing.md * 2 - CARD_GAP) / 2;
+const { height: SVC_H } = Dimensions.get('window');
+const SVC_BOTTOM_OFF = Math.round(SVC_H * 0.40);
+const SVC_BOTTOM_H = Math.round(SVC_H * 0.60);
+
+// Editorial list-style Connect screen. No card grid. Apple-grade
+// hairline rows with wordmark initials, one-line tagline, and a
+// single right-aligned action.
+function ProviderLogo({ uri, color, mark }: { uri: string; color: string; mark: string }) {
+  const [failed, setFailed] = useState(false);
+  if (failed) {
+    return (
+      <View style={[styles.logoFallback, { borderColor: color }]}>
+        <Text style={[styles.logoFallbackText, { color }]}>{mark}</Text>
+      </View>
+    );
+  }
+  return (
+    <View style={styles.logoWrap}>
+      <Image
+        source={{ uri }}
+        style={styles.logoImage}
+        resizeMode="cover"
+        onError={() => setFailed(true)}
+      />
+    </View>
+  );
+}
+
+/** Space reserved for tab bar + FAB (see app/(tabs)/_layout.tsx). */
+const TAB_BAR_OFFSET = 92;
+const DOCK_AUTO_HIDE_MS = 6000;
+
+/** Ring geometry around Build button (SVG uses useNativeDriver: false). */
+const BUILD_RING = 64;
+const RING_R = 26;
+const RING_C = 2 * Math.PI * RING_R;
+const RING_CX = BUILD_RING / 2;
+const RING_CY = BUILD_RING / 2;
+
+/** Reanimated + RNSVG: RN Animated often fails to drive strokeDashoffset on Circle */
+const ReanimatedCircle = Reanimated.createAnimatedComponent(SvgCircle);
 
 export default function ServicesScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [connected, setConnected] = useState<Set<string>>(new Set());
-  const [connecting, setConnecting] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  /** Toast dock: only after user adds a provider, auto-hides after DOCK_AUTO_HIDE_MS */
+  const [dockVisible, setDockVisible] = useState(false);
 
-  // Staggered entrance anims
-  const cardAnims = useRef(SERVICE_CONFIGS.map(() => new Animated.Value(0))).current;
-  const headerAnim = useRef(new Animated.Value(0)).current;
-  const bannerAnim = useRef(new Animated.Value(0)).current;
+  const headerFade = useRef(new Animated.Value(0)).current;
+  const rowFades = useRef(SERVICE_CONFIGS.map(() => new Animated.Value(0))).current;
+  const dockY = useRef(new Animated.Value(140)).current;
+  /** 1 = full ring (time remaining), animates to 0 over DOCK_AUTO_HIDE_MS */
+  const ringProgress = useSharedValue(1);
+  const dismissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** False after dock hides or before first slide-in this session — so re-adding springs again */
+  const dockSlideInDoneRef = useRef(false);
 
-  // Connecting pulse animation
-  const pulseAnim = useRef(new Animated.Value(0)).current;
+  const countdownRingProps = useAnimatedProps(() => ({
+    strokeDashoffset: RING_C * (1 - ringProgress.value),
+  }));
+
+  const clearDockTimers = useCallback(() => {
+    if (dismissTimerRef.current) {
+      clearTimeout(dismissTimerRef.current);
+      dismissTimerRef.current = null;
+    }
+    cancelAnimation(ringProgress);
+    ringProgress.value = 1;
+  }, [ringProgress]);
+
+  const hideDockAnimated = useCallback(() => {
+    clearDockTimers();
+    dockSlideInDoneRef.current = false;
+    Animated.timing(dockY, {
+      toValue: 140,
+      duration: 320,
+      easing: Easing.in(Easing.cubic),
+      useNativeDriver: true,
+    }).start(({ finished }) => {
+      if (finished) setDockVisible(false);
+    });
+  }, [clearDockTimers, dockY]);
+
+  const showDockWithTimer = useCallback(() => {
+    clearDockTimers();
+
+    const needsSlideIn = !dockSlideInDoneRef.current;
+    if (needsSlideIn) {
+      dockSlideInDoneRef.current = true;
+      dockY.setValue(140);
+      setDockVisible(true);
+      Animated.spring(dockY, {
+        toValue: 0,
+        ...motion.springFirm,
+        useNativeDriver: true,
+      }).start();
+    }
+
+    ringProgress.value = 1;
+    ringProgress.value = withTiming(0, {
+      duration: DOCK_AUTO_HIDE_MS,
+      easing: ReanimatedEasing.linear,
+    });
+
+    dismissTimerRef.current = setTimeout(() => {
+      hideDockAnimated();
+    }, DOCK_AUTO_HIDE_MS);
+  }, [clearDockTimers, dockY, hideDockAnimated, ringProgress]);
+
   useEffect(() => {
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseAnim, { toValue: 1, duration: 800, useNativeDriver: true }),
-        Animated.timing(pulseAnim, { toValue: 0, duration: 800, useNativeDriver: true }),
-      ])
-    ).start();
-  }, []);
+    Animated.sequence([
+      Animated.timing(headerFade, {
+        toValue: 1,
+        duration: 500,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+      Animated.stagger(60, rowFades.map(f =>
+        Animated.timing(f, {
+          toValue: 1,
+          duration: 400,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        })
+      )),
+    ]).start();
 
-  useEffect(() => {
-    // Header entrance
-    Animated.spring(headerAnim, { toValue: 1, ...motion.springGentle, useNativeDriver: true }).start();
-
-    // Staggered card entrance
-    Animated.stagger(
-      100,
-      cardAnims.map(anim =>
-        Animated.spring(anim, { toValue: 1, ...motion.spring, useNativeDriver: true })
-      )
-    ).start();
-
-    // Load services
     api.listServices()
       .then(data => {
         setConnected(new Set(data.filter(s => s.isConnected).map(s => s.id)));
@@ -68,12 +170,34 @@ export default function ServicesScreen() {
       .finally(() => setLoading(false));
   }, []);
 
-  // Banner entrance when services are connected
   useEffect(() => {
-    if (connected.size > 0) {
-      Animated.spring(bannerAnim, { toValue: 1, ...motion.spring, useNativeDriver: true }).start();
+    if (connected.size === 0) {
+      clearDockTimers();
+      dockSlideInDoneRef.current = false;
+      dockY.setValue(140);
+      setDockVisible(false);
     }
-  }, [connected.size]);
+  }, [connected.size, clearDockTimers, dockY]);
+
+  useEffect(() => () => clearDockTimers(), [clearDockTimers]);
+
+  async function toggle(svc: ServiceConfig) {
+    Haptics.selectionAsync();
+    const wasLinked = connected.has(svc.id);
+    setBusy(svc.id);
+    await new Promise(r => setTimeout(r, 700));
+    setConnected(prev => {
+      const next = new Set(prev);
+      if (next.has(svc.id)) next.delete(svc.id);
+      else next.add(svc.id);
+      return next;
+    });
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    setBusy(null);
+    if (!wasLinked) {
+      showDockWithTimer();
+    }
+  }
 
   async function onRefresh() {
     setRefreshing(true);
@@ -85,379 +209,445 @@ export default function ServicesScreen() {
     }
   }
 
-  async function handleConnect(id: string) {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    setConnecting(id);
-
-    // Simulate OAuth flow
-    await new Promise(r => setTimeout(r, 1200));
-
-    setConnected(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    setConnecting(null);
-  }
-
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <SafeAreaView style={styles.screen} edges={['top']}>
+      <Confetti mode="drift" count={16} bandHeight={320} seed={53} />
+      <Confetti
+        mode="drift"
+        count={48}
+        seed={61}
+        bandOffset={SVC_BOTTOM_OFF}
+        bandHeight={SVC_BOTTOM_H}
+        style={{ opacity: 0.82 }}
+      />
       <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={styles.scroll}
+        showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            tintColor={colors.accentFuchsia}
+            tintColor={colors.primary}
           />
         }
-        showsVerticalScrollIndicator={false}
       >
-        {/* ─── Header ─── */}
+        {/* ─── Editorial header ─── */}
         <Animated.View
           style={[
             styles.header,
             {
-              opacity: headerAnim,
-              transform: [{ translateY: headerAnim.interpolate({ inputRange: [0, 1], outputRange: [20, 0] }) }],
+              opacity: headerFade,
+              transform: [{
+                translateY: headerFade.interpolate({ inputRange: [0, 1], outputRange: [16, 0] }),
+              }],
             },
           ]}
         >
-          <Text style={styles.headerOverline}>CONNECT YOUR SERVICES</Text>
-          <Text style={styles.headerTitle}>Link Your{'\n'}Apps</Text>
-          <Text style={styles.headerSubtitle}>
-            Connect accounts to build your personalized Wrapped story experience.
+          <Text style={styles.eyebrow}>Accounts</Text>
+          <Text style={styles.headline}>
+            Your linked{'\n'}apps.
+          </Text>
+          <Text style={styles.sub}>
+            Tap Add to link a provider, then use the + button to build a recap.
           </Text>
         </Animated.View>
 
-        {/* ─── Service Grid ─── */}
-        <View style={styles.grid}>
+        {/* ─── Section label ─── */}
+        <Text style={styles.sectionLabel}>Connections</Text>
+
+        {/* ─── List: glass rows, editorial typography (no busy chips) ─── */}
+        <View style={styles.list}>
           {SERVICE_CONFIGS.map((svc, i) => {
             const isConnected = connected.has(svc.id);
-            const isConnecting = connecting === svc.id;
-
+            const isBusy = busy === svc.id;
             return (
               <Animated.View
                 key={svc.id}
-                style={[
-                  styles.cardOuter,
-                  {
-                    opacity: cardAnims[i],
-                    transform: [
-                      {
-                        scale: cardAnims[i].interpolate({
-                          inputRange: [0, 1],
-                          outputRange: [0.85, 1],
-                        }),
-                      },
-                      {
-                        translateY: cardAnims[i].interpolate({
-                          inputRange: [0, 1],
-                          outputRange: [30, 0],
-                        }),
-                      },
-                    ],
-                  },
-                ]}
+                style={{
+                  opacity: rowFades[i],
+                  transform: [{
+                    translateY: rowFades[i].interpolate({ inputRange: [0, 1], outputRange: [12, 0] }),
+                  }],
+                }}
               >
-                <View style={[styles.card, isConnected && styles.cardConnected]}>
-                  {/* Top accent line */}
-                  <LinearGradient
-                    colors={[svc.gradient[0], svc.gradient[1]]}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 0 }}
-                    style={styles.accentLine}
-                  />
-
-                  {/* Emoji badge */}
-                  <View style={[styles.emojiBadge, { backgroundColor: svc.iconBg }]}>
-                    <Text style={styles.emojiText}>{svc.emoji}</Text>
-                  </View>
-
-                  {/* Name */}
-                  <Text style={styles.cardName}>{svc.name}</Text>
-
-                  {/* Description */}
-                  <Text style={styles.cardDesc}>{svc.description}</Text>
-
-                  {/* Connect Button */}
-                  <TouchableOpacity
-                    style={[
-                      styles.connectBtn,
-                      isConnected && styles.connectBtnActive,
+                <LiquidGlass
+                  style={styles.rowGlass}
+                  effect="liquid"
+                  intensity={82}
+                  tint="light"
+                  radius={radii.xxl}
+                  elevated={false}
+                  color="rgba(255, 252, 247, 0.42)"
+                >
+                  <Pressable
+                    onPress={() => !isBusy && toggle(svc)}
+                    style={({ pressed }) => [
+                      styles.rowInner,
+                      pressed && styles.rowPressed,
                     ]}
-                    onPress={() => handleConnect(svc.id)}
-                    disabled={isConnecting}
-                    activeOpacity={0.7}
                   >
-                    {isConnecting ? (
-                      <Animated.View
-                        style={[
-                          styles.connectingIndicator,
-                          {
-                            opacity: pulseAnim.interpolate({
-                              inputRange: [0, 1],
-                              outputRange: [0.4, 1],
-                            }),
-                            backgroundColor: svc.color,
-                          },
-                        ]}
-                      />
-                    ) : isConnected ? (
-                      <View style={styles.connectedRow}>
-                        <Text style={[styles.connectBtnTextActive, { color: svc.color }]}>✓</Text>
-                        <Text style={[styles.connectBtnTextActive, { color: svc.color }]}>Linked</Text>
-                      </View>
-                    ) : (
-                      <Text style={styles.connectBtnText}>Connect</Text>
-                    )}
-                  </TouchableOpacity>
-                </View>
+                    <View style={styles.logoShell}>
+                      <ProviderLogo uri={svc.logoUri} color={svc.color} mark={svc.mark} />
+                    </View>
+                    <View style={styles.rowBody}>
+                      <Text style={styles.rowTitle} numberOfLines={1}>{svc.name}</Text>
+                      <Text style={styles.rowTag} numberOfLines={1}>{svc.tagline}</Text>
+                      <Text style={styles.rowMeta} numberOfLines={1}>
+                        {AUTH_LABEL[svc.authKind]}
+                      </Text>
+                    </View>
+                    <View style={styles.rowAction}>
+                      {isBusy ? (
+                        <ActivityIndicator color={colors.primary} size="small" />
+                      ) : isConnected ? (
+                        <View style={styles.linkedMark}>
+                          <View style={styles.linkedDot} />
+                          <Text style={styles.linkedLabel}>Added</Text>
+                        </View>
+                      ) : (
+                        <View style={styles.addCapsule}>
+                          <Text style={styles.addCapsuleText}>Add</Text>
+                        </View>
+                      )}
+                    </View>
+                  </Pressable>
+                </LiquidGlass>
               </Animated.View>
             );
           })}
         </View>
 
-        {/* Bottom spacer for banner */}
-        <View style={{ height: 80 }} />
+        {/* ─── Privacy footnote ─── */}
+        <View style={styles.footnote}>
+          <Text style={styles.footnoteText}>
+            We only store summary stats needed for your recap — not your full listening history or health files.
+          </Text>
+        </View>
+
+        <View style={{ height: loading ? 20 : 120 }} />
       </ScrollView>
 
-      {/* ─── Bottom Banner ─── */}
-      {connected.size > 0 && (
-        <Animated.View
-          style={[
-            styles.banner,
-            {
-              opacity: bannerAnim,
-              transform: [
-                {
-                  translateY: bannerAnim.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [60, 0],
-                  }),
-                },
-              ],
-            },
-          ]}
+      {/* ─── Toast: appears when you add a provider; auto-hides after 6s (ring = countdown) ─── */}
+      {connected.size > 0 && dockVisible && (
+      <Animated.View
+        style={[
+          styles.dockShell,
+          {
+            bottom: Math.max(insets.bottom, 8) + TAB_BAR_OFFSET,
+            transform: [{ translateY: dockY }],
+          },
+        ]}
+        pointerEvents="auto"
+      >
+        <LiquidGlass
+          style={styles.dockGlass}
+          effect="liquid"
+          elevated
+          intensity={92}
+          tint="light"
+          radius={radii.xl}
         >
-          <View style={styles.bannerContent}>
-            <View style={styles.bannerLeft}>
-              <View style={styles.bannerBadge}>
-                <Text style={styles.bannerBadgeText}>{connected.size}</Text>
-              </View>
-              <Text style={styles.bannerText}>
-                {connected.size === SERVICE_CONFIGS.length ? 'All services linked!' : `of ${SERVICE_CONFIGS.length} linked`}
+          <View style={styles.dockInner}>
+            <View style={styles.dockBadge}>
+              <Text style={styles.dockBadgeText}>{connected.size}</Text>
+            </View>
+            <View style={styles.dockCopy}>
+              <Text style={styles.dockTitle}>Ready for your recap</Text>
+              <Text style={styles.dockSubtitle}>
+                {connected.size} account{connected.size === 1 ? '' : 's'} connected
               </Text>
             </View>
-
-            <TouchableOpacity
-              style={styles.bannerCta}
-              onPress={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                router.push('/(tabs)/dashboard');
-              }}
-              activeOpacity={0.8}
-            >
-              <LinearGradient
-                colors={[colors.accentPurple, colors.accentFuchsia]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={styles.bannerCtaGradient}
+            <View style={styles.buildWrap}>
+              {/* Button first so the ring SVG paints on top (otherwise the ink pill covers the arc) */}
+              <Pressable
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                  clearDockTimers();
+                  router.push('/wizard');
+                  hideDockAnimated();
+                }}
+                style={({ pressed }) => [styles.dockCta, pressed && styles.dockCtaPressed]}
               >
-                <Text style={styles.bannerCtaText}>Build →</Text>
-              </LinearGradient>
-            </TouchableOpacity>
+                <Text style={styles.dockCtaText}>Build</Text>
+              </Pressable>
+              <Svg
+                width={BUILD_RING}
+                height={BUILD_RING}
+                style={styles.buildRingSvg}
+                pointerEvents="none"
+              >
+                <SvgCircle
+                  cx={RING_CX}
+                  cy={RING_CY}
+                  r={RING_R}
+                  stroke="rgba(255, 255, 255, 0.35)"
+                  strokeWidth={3}
+                  fill="none"
+                  transform={`rotate(-90, ${RING_CX}, ${RING_CY})`}
+                />
+                <ReanimatedCircle
+                  cx={RING_CX}
+                  cy={RING_CY}
+                  r={RING_R}
+                  stroke="#FFFFFF"
+                  strokeWidth={3}
+                  fill="none"
+                  strokeLinecap="round"
+                  strokeDasharray={RING_C}
+                  animatedProps={countdownRingProps}
+                  transform={`rotate(-90, ${RING_CX}, ${RING_CY})`}
+                />
+              </Svg>
+            </View>
           </View>
-        </Animated.View>
+        </LiquidGlass>
+      </Animated.View>
       )}
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  screen: {
     flex: 1,
     backgroundColor: colors.background,
   },
   scroll: {
-    flex: 1,
-  },
-  scrollContent: {
-    paddingHorizontal: spacing.md,
-    paddingTop: spacing.lg,
-    paddingBottom: 120,
+    paddingHorizontal: space.lg,
+    paddingTop: space.xl,
+    paddingBottom: space.xl,
   },
 
-  // ─── Header ─────────────────────
+  // ─── Header ──────────────────────────────────────────────
   header: {
-    marginBottom: spacing.xl,
-    paddingHorizontal: spacing.xs,
+    marginBottom: space.xl,
   },
-  headerOverline: {
-    ...typography.overline,
-    color: colors.accentFuchsia,
-    marginBottom: spacing.sm,
+  eyebrow: {
+    ...type.eyebrow,
+    color: colors.tertiary,
+    marginBottom: space.md,
   },
-  headerTitle: {
-    ...typography.display,
-    fontSize: 44,
-    lineHeight: 48,
+  headline: {
+    ...type.displayXL,
     color: colors.primary,
-    marginBottom: spacing.sm,
-    letterSpacing: -1.5,
+    marginBottom: space.md,
   },
-  headerSubtitle: {
-    ...typography.body,
+  sub: {
+    ...type.body,
     color: colors.secondary,
-    lineHeight: 24,
-    maxWidth: 300,
+    maxWidth: 340,
   },
 
-  // ─── Grid ─────────────────────
-  grid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: CARD_GAP,
+  // ─── Section ─────────────────────────────────────────────
+  sectionLabel: {
+    ...type.eyebrow,
+    color: colors.tertiary,
+    marginBottom: space.md,
+    letterSpacing: 2,
   },
-  cardOuter: {
-    width: CARD_W,
+
+  // ─── List — glass surface rows, restrained chrome ─────────
+  list: {
+    marginBottom: space.xl,
+    gap: 10,
   },
-  card: {
-    backgroundColor: colors.glassFill,
-    borderRadius: radii.xxl,
-    borderWidth: 1,
-    borderColor: colors.glassStroke,
-    padding: spacing.md,
-    paddingTop: spacing.md + 6,
-    alignItems: 'center',
+  rowGlass: {
     overflow: 'hidden',
-    position: 'relative',
-    minHeight: 195,
   },
-  cardConnected: {
-    borderColor: 'rgba(0, 230, 118, 0.15)',
-    backgroundColor: 'rgba(0, 230, 118, 0.02)',
+  rowInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+    gap: 14,
   },
-  accentLine: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 3,
+  rowPressed: {
+    opacity: 0.92,
   },
-  emojiBadge: {
-    width: 48,
-    height: 48,
-    borderRadius: 16,
+  logoShell: {
+    width: 52,
+    height: 52,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255, 255, 255, 0.65)',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: spacing.sm,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(20, 16, 10, 0.06)',
   },
-  emojiText: {
-    fontSize: 24,
+  logoWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 9,
+    overflow: 'hidden',
+    backgroundColor: 'transparent',
   },
-  cardName: {
-    ...typography.bodySemibold,
+  logoImage: {
+    width: '100%',
+    height: '100%',
+  },
+  logoFallback: {
+    width: 36,
+    height: 36,
+    borderRadius: 9,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.5)',
+  },
+  logoFallbackText: {
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  rowBody: {
+    flex: 1,
+    minWidth: 0,
+    justifyContent: 'center',
+    gap: 3,
+  },
+  rowTitle: {
+    ...type.titleSmall,
     color: colors.primary,
-    marginBottom: 4,
+    fontWeight: '600',
+    letterSpacing: -0.35,
   },
-  cardDesc: {
-    ...typography.caption,
+  rowTag: {
+    ...type.bodySmall,
+    color: colors.secondary,
+    opacity: 0.92,
+    letterSpacing: -0.1,
+  },
+  rowMeta: {
+    ...type.mono,
+    fontSize: 10,
+    color: colors.muted,
+    letterSpacing: 0.15,
+    marginTop: 5,
+  },
+  rowAction: {
+    minWidth: 76,
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+  },
+  addCapsule: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: radii.pill,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(20, 16, 10, 0.14)',
+    backgroundColor: 'rgba(255, 255, 255, 0.35)',
+  },
+  addCapsuleText: {
+    ...type.bodySmallMedium,
+    color: colors.primary,
+    fontWeight: '600',
+    letterSpacing: -0.15,
+  },
+  linkedMark: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  linkedDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: colors.success,
+  },
+  linkedLabel: {
+    ...type.caption,
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.success,
+    letterSpacing: -0.1,
+  },
+
+  // ─── Footnote ────────────────────────────────────────────
+  footnote: {
+    paddingHorizontal: space.xs,
+  },
+  footnoteText: {
+    ...type.caption,
     color: colors.tertiary,
-    textAlign: 'center',
-    marginBottom: spacing.md,
+    lineHeight: 18,
+  },
+
+  // ─── Dock (floating panel above tab bar) ─────────────────
+  dockShell: {
+    position: 'absolute',
+    left: space.md,
+    right: space.md,
+  },
+  dockGlass: {
+    overflow: 'visible',
+  },
+  dockInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.md,
+    paddingVertical: 12,
+    paddingLeft: 12,
+    paddingRight: 10,
+  },
+  dockBadge: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dockBadgeText: {
+    ...type.titleSmall,
+    color: colors.inverse,
+    fontWeight: '800',
+  },
+  dockCopy: {
+    flex: 1,
+    gap: 2,
+    minWidth: 0,
+  },
+  dockTitle: {
+    ...type.bodySmallMedium,
+    color: colors.primary,
+    letterSpacing: -0.2,
+  },
+  dockSubtitle: {
+    ...type.caption,
+    color: colors.tertiary,
     lineHeight: 16,
   },
-  connectBtn: {
-    backgroundColor: 'rgba(108, 92, 231, 0.1)',
-    paddingHorizontal: 20,
-    paddingVertical: 8,
-    borderRadius: radii.full,
-    borderWidth: 1,
-    borderColor: 'rgba(108, 92, 231, 0.25)',
-    minWidth: 90,
-    alignItems: 'center',
-  },
-  connectBtnActive: {
-    backgroundColor: 'rgba(0, 230, 118, 0.08)',
-    borderColor: 'rgba(0, 230, 118, 0.2)',
-  },
-  connectBtnText: {
-    ...typography.captionBold,
-    color: colors.accentPurple,
-    letterSpacing: 0.5,
-  },
-  connectedRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  connectBtnTextActive: {
-    ...typography.captionBold,
-    letterSpacing: 0.5,
-  },
-  connectingIndicator: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-  },
-
-  // ─── Banner ─────────────────────
-  banner: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    paddingHorizontal: spacing.md,
-    paddingBottom: 34,
-    paddingTop: spacing.md,
-    backgroundColor: colors.surface,
-    borderTopColor: colors.border,
-    borderTopWidth: StyleSheet.hairlineWidth,
-  },
-  bannerContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  bannerLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-  },
-  bannerBadge: {
-    width: 32,
-    height: 32,
-    borderRadius: 10,
-    backgroundColor: 'rgba(108, 92, 231, 0.15)',
+  buildWrap: {
+    position: 'relative',
+    width: BUILD_RING,
+    height: BUILD_RING,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  bannerBadgeText: {
-    ...typography.bodySemibold,
-    color: colors.accentPurple,
-    fontSize: 15,
+  buildRingSvg: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 2,
   },
-  bannerText: {
-    ...typography.smallMedium,
-    color: colors.secondary,
+  dockCta: {
+    zIndex: 0,
+    backgroundColor: colors.primary,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderRadius: radii.pill,
+    minWidth: 52,
+    alignItems: 'center',
   },
-  bannerCta: {
-    borderRadius: radii.full,
-    overflow: 'hidden',
+  dockCtaPressed: {
+    opacity: 0.88,
+    transform: [{ scale: 0.97 }],
   },
-  bannerCtaGradient: {
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: radii.full,
-  },
-  bannerCtaText: {
-    ...typography.captionBold,
-    color: '#fff',
-    letterSpacing: 0.5,
+  dockCtaText: {
+    ...type.bodySmallMedium,
+    color: colors.inverse,
+    fontWeight: '700',
+    letterSpacing: 0.3,
   },
 });

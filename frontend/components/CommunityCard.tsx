@@ -1,143 +1,82 @@
 import React, { useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, Animated, Dimensions } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
-import { colors, typography, spacing, radii, motion, serviceColors } from '../lib/theme';
-
-const { width: W } = Dimensions.get('window');
+import { View, Text, StyleSheet, Animated, Easing } from 'react-native';
+import { colors, type, space, motion, serviceById, type StoryAccent } from '../lib/theme';
 
 interface Props {
   percentile: number;
   metric: string;
   value: string;
   service: string;
+  accent: StoryAccent;
 }
 
-export function CommunityCard({ percentile, metric, value, service }: Props) {
-  const svc = serviceColors[service] || { primary: colors.accentFuchsia, gradient: [colors.accentPurple, colors.accentFuchsia] as const, bg: 'rgba(224,64,251,0.1)' };
-
-  const badgeScale = useRef(new Animated.Value(0)).current;
-  const textOpacity = useRef(new Animated.Value(0)).current;
-  const textY = useRef(new Animated.Value(20)).current;
-  const barWidth = useRef(new Animated.Value(0)).current;
-  const glowPulse = useRef(new Animated.Value(0)).current;
+// "Top 5%" poster. The rank number carries the whole page.
+export function CommunityCard({ percentile, metric, value, service, accent }: Props) {
+  const svc = serviceById[service];
+  const countUp = useRef(new Animated.Value(percentile)).current;
+  const numFade = useRef(new Animated.Value(0)).current;
+  const numScale = useRef(new Animated.Value(0.85)).current;
+  const [display, setDisplay] = React.useState(100);
 
   useEffect(() => {
+    // Count down from 100 to the user's percentile
+    countUp.setValue(100);
+    const id = countUp.addListener(({ value: v }) => setDisplay(Math.round(v)));
+
     Animated.sequence([
-      Animated.delay(200),
-      Animated.spring(badgeScale, { toValue: 1, damping: 8, stiffness: 100, useNativeDriver: true }),
+      Animated.delay(150),
       Animated.parallel([
-        Animated.timing(textOpacity, { toValue: 1, duration: 400, useNativeDriver: true }),
-        Animated.spring(textY, { toValue: 0, ...motion.springGentle, useNativeDriver: true }),
+        Animated.timing(numFade, {
+          toValue: 1,
+          duration: 400,
+          useNativeDriver: true,
+        }),
+        Animated.spring(numScale, { toValue: 1, ...motion.springSoft, useNativeDriver: true }),
+        Animated.timing(countUp, {
+          toValue: percentile,
+          duration: 1400,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: false,
+        }),
       ]),
-      Animated.timing(barWidth, { toValue: 1, duration: 800, useNativeDriver: false }),
     ]).start();
 
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(glowPulse, { toValue: 1, duration: 2000, useNativeDriver: true }),
-        Animated.timing(glowPulse, { toValue: 0, duration: 2000, useNativeDriver: true }),
-      ])
-    ).start();
-  }, []);
-
-  const pctPosition = (100 - percentile) / 100;
+    return () => countUp.removeListener(id);
+  }, [percentile]);
 
   return (
-    <View style={styles.container}>
-      <View style={[styles.bgGlow, { backgroundColor: svc.primary }]} />
+    <View style={styles.root}>
+      <View style={styles.top}>
+        <Text style={[styles.eyebrow, { color: accent.fg }]}>
+          {svc?.name ?? service} · {metric}
+        </Text>
+      </View>
 
-      <View style={styles.content}>
-        {/* Service badge */}
-        <View style={[styles.serviceBadge, { backgroundColor: svc.bg }]}>
-          <View style={[styles.serviceDot, { backgroundColor: svc.primary }]} />
-          <Text style={[styles.serviceLabel, { color: svc.primary }]}>
-            {service.replace('_', ' ').toUpperCase()}
-          </Text>
-        </View>
-
-        {/* "Top X%" badge */}
-        <Animated.View
+      <View style={styles.center}>
+        <Text style={[styles.prefix, { color: accent.fg }]}>Top</Text>
+        <Animated.Text
           style={[
-            styles.percentileBadge,
+            styles.percent,
             {
-              transform: [{ scale: badgeScale }],
+              color: accent.fg,
+              opacity: numFade,
+              transform: [{ scale: numScale }],
             },
           ]}
         >
-          <Animated.View
-            style={[
-              styles.percentileGlow,
-              {
-                backgroundColor: svc.primary,
-                opacity: glowPulse.interpolate({ inputRange: [0, 1], outputRange: [0.15, 0.35] }),
-              },
-            ]}
-          />
-          <LinearGradient
-            colors={[svc.gradient[0], svc.gradient[1]]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.percentileGradient}
-          >
-            <Text style={styles.percentileText}>Top</Text>
-            <Text style={styles.percentileNumber}>{percentile}%</Text>
-          </LinearGradient>
-        </Animated.View>
+          {display}
+          <Text style={[styles.percentSign, { color: accent.fg }]}>%</Text>
+        </Animated.Text>
+        <Text style={[styles.tag, { color: accent.fg }]}>
+          of listeners worldwide
+        </Text>
+      </View>
 
-        {/* Description */}
-        <Animated.View
-          style={{
-            opacity: textOpacity,
-            transform: [{ translateY: textY }],
-            alignItems: 'center',
-          }}
-        >
-          <Text style={styles.metricText}>of all users in {metric}</Text>
-          <Text style={styles.valueText}>{value}</Text>
-        </Animated.View>
-
-        {/* Position bar */}
-        <View style={styles.barOuter}>
-          <View style={styles.barTrack}>
-            <Animated.View
-              style={[
-                styles.barFill,
-                {
-                  width: barWidth.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: ['0%', `${pctPosition * 100}%`],
-                  }),
-                },
-              ]}
-            >
-              <LinearGradient
-                colors={[svc.gradient[0], svc.gradient[1]]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={StyleSheet.absoluteFill}
-              />
-            </Animated.View>
-            {/* You indicator */}
-            <Animated.View
-              style={[
-                styles.youIndicator,
-                {
-                  left: barWidth.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: ['0%', `${pctPosition * 100}%`],
-                  }),
-                },
-              ]}
-            >
-              <View style={[styles.youDot, { backgroundColor: svc.primary }]} />
-              <Text style={styles.youLabel}>YOU</Text>
-            </Animated.View>
-          </View>
-          <View style={styles.barLabels}>
-            <Text style={styles.barLabelText}>0%</Text>
-            <Text style={styles.barLabelText}>Average</Text>
-            <Text style={styles.barLabelText}>100%</Text>
-          </View>
+      <View style={styles.footer}>
+        <View style={[styles.rule, { backgroundColor: accent.fg }]} />
+        <View style={styles.valueRow}>
+          <Text style={[styles.valueLabel, { color: accent.fg }]}>you</Text>
+          <Text style={[styles.valueValue, { color: accent.fg }]}>{value}</Text>
         </View>
       </View>
     </View>
@@ -145,131 +84,68 @@ export function CommunityCard({ percentile, metric, value, service }: Props) {
 }
 
 const styles = StyleSheet.create({
-  container: {
+  root: {
     flex: 1,
-    backgroundColor: colors.background,
+    paddingHorizontal: space.lg,
+    paddingTop: 110,
+    paddingBottom: 80,
+  },
+  top: {
+    marginBottom: space.lg,
+  },
+  eyebrow: {
+    ...type.eyebrow,
+    opacity: 0.7,
+  },
+  center: {
+    flex: 1,
     justifyContent: 'center',
-    overflow: 'hidden',
   },
-  bgGlow: {
-    position: 'absolute',
-    width: W * 1.4,
-    height: W * 1.4,
-    borderRadius: W,
-    opacity: 0.05,
-    top: -W * 0.5,
-    right: -W * 0.3,
+  prefix: {
+    ...type.displaySmall,
+    opacity: 0.72,
+    marginBottom: -space.sm,
   },
-  content: {
-    paddingHorizontal: spacing.xl,
-    alignItems: 'center',
+  percent: {
+    fontSize: 240,
+    lineHeight: 268,
+    fontWeight: '800',
+    letterSpacing: -14,
+    marginLeft: -8,
+    includeFontPadding: false,
+    paddingTop: 10,
   },
-  serviceBadge: {
+  percentSign: {
+    fontSize: 110,
+    fontWeight: '700',
+    letterSpacing: -6,
+    includeFontPadding: false,
+  },
+  tag: {
+    ...type.bodyMedium,
+    opacity: 0.78,
+    marginTop: space.lg,
+  },
+  footer: {
+    gap: space.md,
+  },
+  rule: {
+    height: 2,
+    width: 40,
+    borderRadius: 1,
+    opacity: 0.7,
+  },
+  valueRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: radii.full,
-    gap: 6,
-    marginBottom: spacing.xxl,
-  },
-  serviceDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-  },
-  serviceLabel: {
-    ...typography.overline,
-    fontSize: 10,
-  },
-  percentileBadge: {
-    width: 140,
-    height: 140,
-    borderRadius: 40,
-    marginBottom: spacing.xl,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  percentileGlow: {
-    position: 'absolute',
-    width: 180,
-    height: 180,
-    borderRadius: 90,
-  },
-  percentileGradient: {
-    width: 140,
-    height: 140,
-    borderRadius: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  percentileText: {
-    ...typography.caption,
-    color: 'rgba(255,255,255,0.7)',
-    letterSpacing: 2,
-    fontSize: 14,
-  },
-  percentileNumber: {
-    fontSize: 48,
-    fontWeight: '900',
-    color: '#fff',
-    letterSpacing: -2,
-    lineHeight: 52,
-  },
-  metricText: {
-    ...typography.body,
-    color: colors.secondary,
-    textAlign: 'center',
-    marginBottom: spacing.sm,
-  },
-  valueText: {
-    ...typography.h2,
-    color: colors.primary,
-    marginBottom: spacing.xxl,
-  },
-
-  // Bar
-  barOuter: {
-    width: '100%',
-  },
-  barTrack: {
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: colors.glassFill2,
-    overflow: 'visible',
-  },
-  barFill: {
-    height: 8,
-    borderRadius: 4,
-    overflow: 'hidden',
-  },
-  youIndicator: {
-    position: 'absolute',
-    top: -24,
-    marginLeft: -12,
-    alignItems: 'center',
-  },
-  youDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    borderWidth: 2,
-    borderColor: '#fff',
-  },
-  youLabel: {
-    ...typography.overline,
-    fontSize: 8,
-    color: colors.secondary,
-    marginTop: 2,
-  },
-  barLabels: {
-    flexDirection: 'row',
+    alignItems: 'baseline',
     justifyContent: 'space-between',
-    marginTop: spacing.sm,
   },
-  barLabelText: {
-    ...typography.caption,
-    color: colors.tertiary,
-    fontSize: 10,
+  valueLabel: {
+    ...type.eyebrow,
+    opacity: 0.65,
+  },
+  valueValue: {
+    ...type.title,
+    fontWeight: '700',
   },
 });

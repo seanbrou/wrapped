@@ -1,596 +1,791 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
-  TouchableOpacity,
-  RefreshControl,
+  Pressable,
   Animated,
+  Easing,
+  RefreshControl,
   Dimensions,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useRouter } from 'expo-router';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRouter, useFocusEffect } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import {
-  colors, typography, spacing, radii, shadows, motion, glass,
-  SERVICE_CONFIGS, serviceColors,
+  colors, type, space, radii,
+  SERVICE_CONFIGS, serviceById, layout,
 } from '../../lib/theme';
-import { api, ServiceInfo } from '../../lib/api';
-import { MOCK_WRAPPED, PERIODS } from '../../lib/mockData';
+import { api, RecapSummary, ServiceInfo } from '../../lib/api';
+import { TEMPLATES, Template } from '../../lib/mockData';
+import Confetti from '../../components/Confetti';
+import LiquidGlass from '../../components/LiquidGlass';
 
-const { width: W } = Dimensions.get('window');
+const { width: W, height: SCREEN_H } = Dimensions.get('window');
+const BOTTOM_CONFETTI_OFFSET = Math.round(SCREEN_H * 0.40);
+const BOTTOM_CONFETTI_HEIGHT = Math.round(SCREEN_H * 0.60);
+const TEMPLATE_CARD_W = Math.min(260, W * 0.72);
 
-export default function DashboardScreen() {
+// Accent lookup for subtle tints
+// Slightly richer than theme tints so color reads through liquid-glass sheens
+const ACCENT_BG: Record<string, string> = {
+  mint: 'rgba(30, 215, 96, 0.22)',
+  red: 'rgba(255, 59, 48, 0.18)',
+  amber: 'rgba(255, 176, 32, 0.22)',
+  sky: 'rgba(10, 132, 255, 0.18)',
+  lilac: 'rgba(191, 90, 242, 0.18)',
+  coral: 'rgba(255, 107, 91, 0.18)',
+};
+const ACCENT_FG: Record<string, string> = {
+  mint: colors.mint,
+  red: colors.red,
+  amber: colors.amber,
+  sky: colors.sky,
+  lilac: colors.lilac,
+  coral: colors.coral,
+};
+
+function timeAgo(iso: string): string {
+  const then = new Date(iso).getTime();
+  const diff = Date.now() - then;
+  const m = Math.floor(diff / 60000);
+  if (m < 1) return 'Just now';
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  if (d < 7) return `${d}d ago`;
+  return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+export default function Home() {
   const router = useRouter();
-  const [loading, setLoading] = useState(true);
-  const [connectedIds, setConnectedIds] = useState<string[]>([]);
-  const [selectedServices, setSelectedServices] = useState<string[]>([]);
-  const [period, setPeriod] = useState('year');
-  const [generating, setGenerating] = useState(false);
+  const [connected, setConnected] = useState<ServiceInfo[]>([]);
+  const [recaps, setRecaps] = useState<RecapSummary[]>([]);
   const [refreshing, setRefreshing] = useState(false);
 
-  // Animations
-  const headerAnim = useRef(new Animated.Value(0)).current;
-  const sectionAnims = useRef([0, 1, 2].map(() => new Animated.Value(0))).current;
-  const btnScale = useRef(new Animated.Value(1)).current;
-  const btnGlow = useRef(new Animated.Value(0)).current;
-  const genProgress = useRef(new Animated.Value(0)).current;
+  const hero = useRef(new Animated.Value(0)).current;
+
+  const load = useCallback(async () => {
+    const [svcs, rps] = await Promise.all([api.listServices(), api.listRecaps()]);
+    setConnected(svcs.filter(s => s.isConnected));
+    setRecaps(rps);
+  }, []);
 
   useEffect(() => {
-    // Header entrance
-    Animated.spring(headerAnim, { toValue: 1, ...motion.springGentle, useNativeDriver: true }).start();
+    Animated.timing(hero, {
+      toValue: 1,
+      duration: 600,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [hero]);
 
-    // Stagger sections
-    Animated.stagger(150, sectionAnims.map(a =>
-      Animated.spring(a, { toValue: 1, ...motion.spring, useNativeDriver: true })
-    )).start();
-
-    // Button glow pulse
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(btnGlow, { toValue: 1, duration: 2000, useNativeDriver: true }),
-        Animated.timing(btnGlow, { toValue: 0, duration: 2000, useNativeDriver: true }),
-      ])
-    ).start();
-
-    // Load services
-    api.listServices()
-      .then(data => {
-        const ids = data.filter((s: ServiceInfo) => s.isConnected).map((s: ServiceInfo) => s.id);
-        setConnectedIds(ids);
-        setSelectedServices(ids);
-      })
-      .catch(() => {
-        // Default: all services connected for demo
-        const ids = SERVICE_CONFIGS.map(s => s.id);
-        setConnectedIds(ids);
-        setSelectedServices(ids);
-      })
-      .finally(() => setLoading(false));
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      load();
+    }, [load]),
+  );
 
   async function onRefresh() {
     setRefreshing(true);
-    try {
-      const data = await api.listServices();
-      const ids = data.filter((s: ServiceInfo) => s.isConnected).map((s: ServiceInfo) => s.id);
-      setConnectedIds(ids);
-    } finally {
-      setRefreshing(false);
+    try { await load(); } finally { setRefreshing(false); }
+  }
+
+  function openWizard(template?: Template) {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    if (template) {
+      router.push({ pathname: '/wizard', params: { templateId: template.id } });
+    } else {
+      router.push('/wizard');
     }
   }
 
-  function toggleService(id: string) {
-    Haptics.selectionAsync();
-    setSelectedServices(prev =>
-      prev.includes(id) ? prev.filter(s => s !== id) : [...prev, id]
-    );
+  function openSurpriseTemplate() {
+    const t = TEMPLATES[Math.floor(Math.random() * TEMPLATES.length)];
+    openWizard(t);
   }
 
-  async function handleGenerate() {
-    if (selectedServices.length === 0) return;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+  const greeting = useMemo(() => {
+    const h = new Date().getHours();
+    if (h < 5)  return 'Up late';
+    if (h < 12) return 'Good morning';
+    if (h < 18) return 'Good afternoon';
+    return 'Good evening';
+  }, []);
 
-    // Press animation
-    Animated.sequence([
-      Animated.spring(btnScale, { toValue: 0.93, damping: 8, stiffness: 200, useNativeDriver: true }),
-      Animated.spring(btnScale, { toValue: 1, damping: 10, stiffness: 150, useNativeDriver: true }),
-    ]).start();
-
-    setGenerating(true);
-
-    // Progress animation
-    genProgress.setValue(0);
-    Animated.timing(genProgress, { toValue: 1, duration: 2500, useNativeDriver: false }).start();
-
-    try {
-      const result = await api.generateWrapped(selectedServices);
-      router.push(`/wrapped/${result.sessionId}`);
-    } catch {
-      router.push(`/wrapped/${MOCK_WRAPPED.id}`);
-    }
-  }
-
-  const connectedServiceConfigs = SERVICE_CONFIGS.filter(s => connectedIds.includes(s.id));
-  const disabled = selectedServices.length === 0 || generating;
+  const hasRecaps = recaps.length > 0;
+  const hasConnections = connected.length > 0;
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <SafeAreaView style={styles.screen} edges={['top']}>
+      {/* Ambient drifting confetti — hero band, full scroll scatter, extra density in bottom half */}
+      <Confetti mode="drift" count={34} bandHeight={360} seed={13} style={styles.confetti} />
+      <Confetti mode="drift" count={22} bandHeight={1200} seed={31} style={styles.confettiDeep} />
+      <Confetti
+        mode="drift"
+        count={56}
+        seed={89}
+        bandOffset={BOTTOM_CONFETTI_OFFSET}
+        bandHeight={BOTTOM_CONFETTI_HEIGHT}
+        style={styles.confettiBottom}
+      />
+
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            tintColor={colors.accentFuchsia}
+            tintColor={colors.primary}
           />
         }
-        showsVerticalScrollIndicator={false}
       >
-        {/* ─── Hero Header ─── */}
+        {/* ─── Hero ─────────────────────────────────────────────── */}
         <Animated.View
           style={[
             styles.hero,
             {
-              opacity: headerAnim,
-              transform: [{ translateY: headerAnim.interpolate({ inputRange: [0, 1], outputRange: [30, 0] }) }],
+              opacity: hero,
+              transform: [{
+                translateY: hero.interpolate({ inputRange: [0, 1], outputRange: [16, 0] }),
+              }],
             },
           ]}
         >
-          <Text style={styles.heroOverline}>YOUR YEAR IN REVIEW</Text>
-          <Text style={styles.heroTitle}>My{'\n'}Wrapped</Text>
-          <View style={styles.heroAccent}>
-            <LinearGradient
-              colors={[colors.accentPurple, colors.accentFuchsia, colors.accentCyan]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={styles.heroAccentLine}
-            />
+          <View style={styles.heroHeader}>
+            <View style={styles.heroTopRow}>
+              <Text style={styles.wordmark}>wrapped.</Text>
+              <View style={styles.yearPill}>
+                <Text style={styles.yearPillText}>2026</Text>
+              </View>
+            </View>
+            <Text style={styles.greeting}>{greeting}.</Text>
+            <Text style={styles.heroLede}>
+              {hasRecaps
+                ? 'Your recaps are ready when you are. Tap + to make a new one.'
+                : hasConnections
+                  ? 'You have everything linked up. Tap the + to spin up your first recap.'
+                  : 'Link an account or two, then tap + to generate your first recap.'}
+            </Text>
           </View>
-          <Text style={styles.heroSubtitle}>Select your services and unwrap your year.</Text>
+
+          <View style={styles.heroCtaBand}>
+            <View style={styles.createStack}>
+              <Pressable
+                onPress={() => openWizard()}
+                style={({ pressed }) => [
+                  styles.heroPill,
+                  styles.heroPillDark,
+                  pressed && styles.heroPillPressed,
+                ]}
+              >
+                <Text style={styles.heroPillTextDark} numberOfLines={1}>
+                  Build a recap
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={openSurpriseTemplate}
+                style={({ pressed }) => [
+                  styles.heroPill,
+                  styles.heroPillMyth,
+                  pressed && styles.heroPillPressed,
+                ]}
+              >
+                <LinearGradient
+                  pointerEvents="none"
+                  colors={['#3A0CA3', '#7B2CBF', '#C77DFF', '#F4A261']}
+                  locations={[0, 0.45, 0.8, 1]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={StyleSheet.absoluteFillObject}
+                />
+                <LinearGradient
+                  pointerEvents="none"
+                  colors={['rgba(255,255,255,0.35)', 'rgba(255,255,255,0)']}
+                  locations={[0, 0.55]}
+                  start={{ x: 0.2, y: 0 }}
+                  end={{ x: 0.8, y: 1 }}
+                  style={StyleSheet.absoluteFillObject}
+                />
+                <Text style={styles.heroPillTextMyth} numberOfLines={1}>
+                  Surprise me
+                </Text>
+              </Pressable>
+            </View>
+          </View>
         </Animated.View>
 
-        {loading ? (
-          <View style={styles.loadingContainer}>
-            <Text style={styles.loadingEmoji}>✨</Text>
-            <Text style={styles.loadingText}>Loading your services...</Text>
+        {/* ─── Templates ────────────────────────────────────────── */}
+        <View style={styles.section}>
+          <View style={styles.sectionHead}>
+            <Text style={styles.sectionEyebrow}>Templates</Text>
+            <Text style={styles.sectionCaption}>Tap to start with one</Text>
           </View>
-        ) : connectedIds.length === 0 ? (
-          /* ─── Empty State ─── */
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyEmoji}>🔗</Text>
-            <Text style={styles.emptyTitle}>No services linked yet</Text>
-            <Text style={styles.emptySubtitle}>Connect at least one service to generate your Wrapped.</Text>
-            <TouchableOpacity
-              style={styles.emptyBtn}
-              onPress={() => router.push('/(tabs)/services')}
-              activeOpacity={0.8}
-            >
-              <LinearGradient
-                colors={[colors.accentPurple, colors.accentFuchsia]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={styles.emptyBtnGradient}
-              >
-                <Text style={styles.emptyBtnText}>Connect Services</Text>
-              </LinearGradient>
-            </TouchableOpacity>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={styles.templateCarousel}
+            contentContainerStyle={styles.templateRow}
+            decelerationRate="fast"
+            snapToInterval={TEMPLATE_CARD_W + space.md}
+            removeClippedSubviews={false}
+          >
+            {TEMPLATES.map(t => (
+              <TemplateCard key={t.id} template={t} onPress={() => openWizard(t)} />
+            ))}
+          </ScrollView>
+        </View>
+
+        {/* ─── Your recaps ──────────────────────────────────────── */}
+        <View style={styles.section}>
+          <View style={styles.sectionHead}>
+            <Text style={styles.sectionEyebrow}>Your recaps</Text>
+            <Text style={styles.sectionCaption}>
+              {hasRecaps ? `${recaps.length} saved` : 'Nothing yet'}
+            </Text>
           </View>
-        ) : (
-          <>
-            {/* ─── Service Selector ─── */}
-            <Animated.View
-              style={[
-                styles.section,
-                {
-                  opacity: sectionAnims[0],
-                  transform: [{ translateY: sectionAnims[0].interpolate({ inputRange: [0, 1], outputRange: [20, 0] }) }],
-                },
-              ]}
-            >
-              <Text style={styles.sectionLabel}>INCLUDE IN WRAPPED</Text>
-              <View style={styles.pillRow}>
-                {connectedServiceConfigs.map(svc => {
-                  const isSelected = selectedServices.includes(svc.id);
-                  return (
-                    <TouchableOpacity
-                      key={svc.id}
-                      style={[styles.pill, isSelected && [styles.pillSelected, { borderColor: svc.color + '40' }]]}
-                      onPress={() => toggleService(svc.id)}
-                      activeOpacity={0.7}
-                    >
-                      <View style={[styles.pillDot, { backgroundColor: isSelected ? svc.color : colors.tertiary }]} />
-                      <Text style={[styles.pillText, isSelected && styles.pillTextSelected]}>{svc.name}</Text>
-                      {isSelected && <Text style={[styles.pillCheck, { color: svc.color }]}>✓</Text>}
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            </Animated.View>
 
-            {/* ─── Period Selector ─── */}
-            <Animated.View
-              style={[
-                styles.section,
-                {
-                  opacity: sectionAnims[1],
-                  transform: [{ translateY: sectionAnims[1].interpolate({ inputRange: [0, 1], outputRange: [20, 0] }) }],
-                },
-              ]}
+          {hasRecaps ? (
+            <LiquidGlass
+              style={styles.recapList}
+              effect="liquid"
+              elevated
+              intensity={82}
+              tint="light"
+              radius={radii.lg}
             >
-              <Text style={styles.sectionLabel}>TIME PERIOD</Text>
-              <View style={styles.periodRow}>
-                {PERIODS.map(p => {
-                  const active = period === p.value;
-                  return (
-                    <TouchableOpacity
-                      key={p.value}
-                      style={[styles.periodBtn, active && styles.periodBtnActive]}
-                      onPress={() => { setPeriod(p.value); Haptics.selectionAsync(); }}
-                      activeOpacity={0.7}
-                    >
-                      <Text style={[styles.periodBtnText, active && styles.periodBtnTextActive]}>
-                        {p.label}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            </Animated.View>
+              {recaps.slice(0, 6).map((r, idx) => (
+                <RecapRow
+                  key={r.id}
+                  recap={r}
+                  isFirst={idx === 0}
+                  onPress={() => router.push(`/wrapped/${r.id}`)}
+                />
+              ))}
+              {recaps.length > 6 && (
+                <Text style={styles.recapFooter}>+{recaps.length - 6} more</Text>
+              )}
+            </LiquidGlass>
+          ) : (
+            <LiquidGlass
+              style={styles.placeholder}
+              effect="liquid"
+              elevated
+              intensity={82}
+              tint="light"
+              radius={radii.lg}
+            >
+              <Text style={styles.placeholderTitle}>
+                {hasConnections ? 'No recaps yet.' : 'Link something first.'}
+              </Text>
+              <Text style={styles.placeholderBody}>
+                {hasConnections
+                  ? 'Generate one from a template or the + button — it will save here.'
+                  : 'Head to Accounts, connect at least one app, then come back here.'}
+              </Text>
+              {!hasConnections && (
+                <Pressable
+                  onPress={() => router.push('/(tabs)/services')}
+                  style={({ pressed }) => [styles.placeholderCta, pressed && styles.cardPressed]}
+                >
+                  <Text style={styles.placeholderCtaText}>Open Accounts</Text>
+                </Pressable>
+              )}
+            </LiquidGlass>
+          )}
+        </View>
 
-            {/* ─── Preview Card ─── */}
-            {selectedServices.length > 0 && (
-              <Animated.View
-                style={[
-                  styles.section,
-                  {
-                    opacity: sectionAnims[2],
-                    transform: [{ translateY: sectionAnims[2].interpolate({ inputRange: [0, 1], outputRange: [20, 0] }) }],
-                  },
-                ]}
-              >
-                <View style={styles.previewCard}>
-                  <View style={styles.previewTop}>
-                    <Text style={styles.previewEmoji}>🎁</Text>
-                    <View style={styles.previewTextContainer}>
-                      <Text style={styles.previewTitle}>Your Wrapped Preview</Text>
-                      <Text style={styles.previewSubtitle}>
-                        ~{selectedServices.length * 3} story cards from {selectedServices.length} service{selectedServices.length > 1 ? 's' : ''}
-                      </Text>
+        {/* ─── At a glance ──────────────────────────────────────── */}
+        <View style={styles.section}>
+          <View style={styles.sectionHead}>
+            <Text style={styles.sectionEyebrow}>At a glance</Text>
+            <Pressable onPress={() => router.push('/(tabs)/services')} hitSlop={12}>
+              <Text style={styles.sectionLink}>Manage →</Text>
+            </Pressable>
+          </View>
+          <View style={styles.glanceRow}>
+            <LiquidGlass
+              style={styles.glanceCard}
+              effect="liquid"
+              elevated
+              intensity={85}
+              tint="light"
+              radius={radii.lg}
+            >
+              <Text style={styles.glanceBig}>{connected.length}</Text>
+              <Text style={styles.glanceLabel}>of {SERVICE_CONFIGS.length}</Text>
+              <Text style={styles.glanceCaption}>Accounts linked</Text>
+            </LiquidGlass>
+            <LiquidGlass
+              style={styles.glanceCard}
+              effect="liquid"
+              elevated
+              intensity={85}
+              tint="warm"
+              radius={radii.lg}
+            >
+              <Text style={styles.glanceBig}>{recaps.length}</Text>
+              <Text style={styles.glanceLabel}>saved</Text>
+              <Text style={styles.glanceCaption}>Recaps on device</Text>
+            </LiquidGlass>
+          </View>
+
+          {connected.length > 0 && (
+            <View style={styles.connectedList}>
+              {connected.map(s => {
+                const cfg = serviceById[s.id];
+                if (!cfg) return null;
+                return (
+                  <View key={s.id} style={styles.connectedRow}>
+                    <View style={[styles.connectedMark, { backgroundColor: cfg.color }]}>
+                      <Text style={styles.connectedMarkText}>{cfg.mark}</Text>
                     </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.connectedName}>{cfg.name}</Text>
+                      <Text style={styles.connectedTag}>{cfg.tagline}</Text>
+                    </View>
+                    <Text style={styles.connectedStatus}>Linked</Text>
                   </View>
-
-                  {/* Service emoji chips */}
-                  <View style={styles.previewChips}>
-                    {selectedServices.map(id => {
-                      const svc = SERVICE_CONFIGS.find(s => s.id === id);
-                      if (!svc) return null;
-                      return (
-                        <View key={id} style={[styles.previewChip, { backgroundColor: svc.iconBg }]}>
-                          <Text style={styles.previewChipEmoji}>{svc.emoji}</Text>
-                        </View>
-                      );
-                    })}
-                  </View>
-                </View>
-              </Animated.View>
-            )}
-          </>
-        )}
-      </ScrollView>
-
-      {/* ─── Generate Button ─── */}
-      {!loading && connectedIds.length > 0 && (
-        <View style={styles.footer}>
-          {generating && (
-            <View style={styles.genProgressBar}>
-              <Animated.View
-                style={[
-                  styles.genProgressFill,
-                  {
-                    width: genProgress.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: ['0%', '100%'],
-                    }),
-                  },
-                ]}
-              />
+                );
+              })}
             </View>
           )}
-
-          <Animated.View style={{ transform: [{ scale: btnScale }] }}>
-            <TouchableOpacity
-              style={[styles.generateBtn, disabled && styles.generateBtnDisabled]}
-              onPress={handleGenerate}
-              disabled={disabled}
-              activeOpacity={0.9}
-            >
-              {!disabled && (
-                <Animated.View
-                  style={[
-                    StyleSheet.absoluteFill,
-                    {
-                      opacity: btnGlow.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: [0.6, 1],
-                      }),
-                    },
-                  ]}
-                >
-                  <LinearGradient
-                    colors={[colors.accentPurple, colors.accentFuchsia]}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 0 }}
-                    style={StyleSheet.absoluteFill}
-                  />
-                </Animated.View>
-              )}
-              <Text style={styles.generateBtnText}>
-                {generating ? 'Creating your story…' : '✨ Unwrap Your Year'}
-              </Text>
-            </TouchableOpacity>
-          </Animated.View>
         </View>
-      )}
+
+        <View style={{ height: 140 }} />
+      </ScrollView>
     </SafeAreaView>
   );
 }
 
+// ─── Template card ─────────────────────────────────────────────
+function TemplateCard({ template, onPress }: { template: Template; onPress: () => void }) {
+  const bg = ACCENT_BG[template.accentKey] ?? 'rgba(255,255,255,0.38)';
+  const fg = ACCENT_FG[template.accentKey] ?? colors.primary;
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [pressed && styles.cardPressed]}
+    >
+      <LiquidGlass
+        style={styles.templateCard}
+        color={bg}
+        effect="liquid"
+        elevated
+        intensity={88}
+        tint="light"
+        radius={radii.xl}
+      >
+        <View style={styles.templateTopRow}>
+          <Text style={[styles.templateTag, { color: fg }]}>{template.tag.toUpperCase()}</Text>
+          <Text style={[styles.templateCards, { color: fg }]}>
+            ~{template.approxCards} cards
+          </Text>
+        </View>
+        <View style={{ flex: 1 }} />
+        <Text style={styles.templateName}>{template.name}</Text>
+        <Text style={styles.templateBlurb}>{template.blurb}</Text>
+        <View style={styles.templateFooter}>
+          <View style={styles.templateDotsRow}>
+            {template.services.slice(0, 5).map(sid => {
+              const svc = serviceById[sid];
+              if (!svc) return null;
+              return <View key={sid} style={[styles.templateDot, { backgroundColor: svc.color }]} />;
+            })}
+            {template.services.length === 0 && (
+              <Text style={styles.templateFooterMuted}>You choose</Text>
+            )}
+          </View>
+          <Text style={[styles.templateGo, { color: fg }]}>Start →</Text>
+        </View>
+      </LiquidGlass>
+    </Pressable>
+  );
+}
+
+// ─── Recap row ─────────────────────────────────────────────────
+function RecapRow({
+  recap, onPress, isFirst,
+}: { recap: RecapSummary; onPress: () => void; isFirst?: boolean }) {
+  const fg = ACCENT_FG[recap.accentKey] ?? colors.primary;
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.recapRow,
+        isFirst && styles.recapRowFirst,
+        pressed && styles.rowPressed,
+      ]}
+    >
+      <View style={[styles.recapSwatch, { backgroundColor: fg }]} />
+      <View style={{ flex: 1 }}>
+        <Text style={styles.recapTitle}>{recap.templateName}</Text>
+        <Text style={styles.recapMeta}>
+          {recap.cardCount} cards · {recap.services.length} app{recap.services.length === 1 ? '' : 's'} · {timeAgo(recap.createdAt)}
+        </Text>
+      </View>
+      <Text style={styles.recapGo}>Play →</Text>
+    </Pressable>
+  );
+}
+
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
+  screen: layout.screen,
   scroll: { flex: 1 },
   scrollContent: {
-    paddingHorizontal: spacing.md,
-    paddingTop: spacing.lg,
-    paddingBottom: 140,
+    paddingHorizontal: space.lg,
+    paddingTop: space.md,
+    flexGrow: 1,
+  },
+  confetti: {
+    // Limited by bandHeight prop; sits behind scroll content.
+  },
+  confettiDeep: {
+    // Sparse scatter extending down the whole scroll area.
+    opacity: 0.7,
+  },
+  confettiBottom: {
+    // Rich layer anchored in the lower ~60% of the viewport (templates, recaps, tab bar zone).
+    opacity: 0.88,
   },
 
-  // ─── Hero ─────────────────────
+  // ─── Hero ────────────────────────────────────────────────────
   hero: {
-    marginBottom: spacing.xxl,
-    paddingHorizontal: spacing.xs,
+    flex: 1,
+    flexDirection: 'column',
+    paddingTop: space.md,
+    paddingBottom: space.xl,
+    overflow: 'visible',
   },
-  heroOverline: {
-    ...typography.overline,
-    color: colors.accentPurple,
-    marginBottom: spacing.sm,
+  heroHeader: {
+    flexShrink: 0,
   },
-  heroTitle: {
-    ...typography.display,
-    fontSize: 52,
-    lineHeight: 56,
+  /** Fills remaining hero height; centers the two CTAs as one block */
+  heroCtaBand: {
+    flex: 1,
+    justifyContent: 'center',
+    minHeight: 0,
+  },
+  heroTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  wordmark: {
+    ...type.title,
     color: colors.primary,
+    letterSpacing: -0.4,
+  },
+  yearPill: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: radii.pill,
+    backgroundColor: colors.primary,
+  },
+  yearPillText: {
+    ...type.caption,
+    color: colors.inverse,
+    fontWeight: '700',
+    letterSpacing: 1,
+  },
+  greeting: {
+    ...type.displayXL,
+    color: colors.primary,
+    marginTop: space.xl,
+    fontSize: 56,
+    lineHeight: 64,
     letterSpacing: -2,
-    marginBottom: spacing.md,
   },
-  heroAccent: {
-    marginBottom: spacing.md,
-  },
-  heroAccentLine: {
-    width: 56,
-    height: 4,
-    borderRadius: 2,
-  },
-  heroSubtitle: {
-    ...typography.body,
+  heroLede: {
+    ...type.body,
     color: colors.secondary,
-    lineHeight: 24,
+    marginTop: space.md,
+    maxWidth: 360,
   },
 
-  // ─── Sections ─────────────────────
+  createStack: {
+    alignSelf: 'stretch',
+    gap: space.sm,
+    marginTop: space.lg,
+    marginBottom: -space.xl,
+  },
+  /** Matches wizard/index primary CTA + wrapped/end secondary CTA */
+  heroPill: {
+    width: '100%',
+    height: 56,
+    borderRadius: radii.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  heroPillDark: {
+    backgroundColor: colors.primary,
+  },
+  /** Mythical-loot vibe: epic purple → fuchsia → amber, subtle gold rim */
+  heroPillMyth: {
+    overflow: 'hidden',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(245, 215, 122, 0.75)',
+    shadowColor: '#7B2CBF',
+    shadowOpacity: 0.45,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 6,
+  },
+  heroPillPressed: {
+    opacity: 0.92,
+    transform: [{ scale: 0.985 }],
+  },
+  heroPillTextDark: {
+    ...type.bodyMedium,
+    color: colors.inverse,
+    fontWeight: '600',
+    letterSpacing: -0.1,
+  },
+  heroPillTextMyth: {
+    ...type.bodyMedium,
+    color: '#FFFFFF',
+    fontWeight: '700',
+    letterSpacing: 0.2,
+    textShadowColor: 'rgba(30, 0, 60, 0.45)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
+  },
+
+  // ─── Sections ────────────────────────────────────────────────
   section: {
-    marginBottom: spacing.xl,
+    marginTop: space.xl,
   },
-  sectionLabel: {
-    ...typography.overline,
-    color: colors.tertiary,
-    marginBottom: spacing.md,
-    paddingLeft: spacing.xs,
-  },
-  pillRow: {
+  sectionHead: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
+    justifyContent: 'space-between',
+    alignItems: 'baseline',
+    marginBottom: space.md,
   },
-  pill: {
+  sectionEyebrow: {
+    ...type.eyebrow,
+    color: colors.primary,
+  },
+  sectionCaption: {
+    ...type.caption,
+    color: colors.tertiary,
+  },
+  sectionLink: {
+    ...type.caption,
+    color: colors.primary,
+    fontWeight: '600',
+  },
+
+  // ─── Templates ───────────────────────────────────────────────
+  /** Bleeds to screen edges so cards aren’t clipped inside padded content while scrolling */
+  templateCarousel: {
+    marginHorizontal: -space.lg,
+  },
+  templateRow: {
+    paddingHorizontal: space.lg,
+    gap: space.md,
+  },
+  templateCard: {
+    width: TEMPLATE_CARD_W,
+    height: 220,
+    padding: space.lg,
+    justifyContent: 'space-between',
+  },
+  templateTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  templateTag: {
+    ...type.eyebrow,
+    fontSize: 10,
+    letterSpacing: 1.8,
+  },
+  templateCards: {
+    ...type.caption,
+    opacity: 0.7,
+  },
+  templateName: {
+    ...type.displaySmall,
+    color: colors.primary,
+    fontSize: 28,
+    lineHeight: 34,
+  },
+  templateBlurb: {
+    ...type.bodySmall,
+    color: colors.secondary,
+    marginTop: 6,
+  },
+  templateFooter: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: radii.full,
-    backgroundColor: colors.glassFill,
-    borderWidth: 1,
-    borderColor: colors.glassStroke,
-    gap: 8,
+    justifyContent: 'space-between',
+    marginTop: space.md,
+    paddingTop: space.md,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.hairline,
   },
-  pillSelected: {
-    backgroundColor: 'rgba(108, 92, 231, 0.06)',
+  templateDotsRow: {
+    flexDirection: 'row',
+    gap: 4,
+    alignItems: 'center',
   },
-  pillDot: {
+  templateDot: {
     width: 8,
     height: 8,
     borderRadius: 4,
   },
-  pillText: {
-    ...typography.smallMedium,
-    color: colors.secondary,
+  templateFooterMuted: {
+    ...type.caption,
+    color: colors.tertiary,
   },
-  pillTextSelected: {
-    color: colors.primary,
-  },
-  pillCheck: {
-    fontSize: 12,
-    fontWeight: '700',
+  templateGo: {
+    ...type.bodySmallMedium,
   },
 
-  // ─── Period ─────────────────────
-  periodRow: {
-    flexDirection: 'row',
-    gap: spacing.sm,
+  // ─── Recap list ──────────────────────────────────────────────
+  recapList: {
+    paddingHorizontal: space.md,
   },
-  periodBtn: {
-    paddingHorizontal: 18,
-    paddingVertical: 10,
-    borderRadius: radii.full,
-    backgroundColor: colors.glassFill,
-    borderWidth: 1,
-    borderColor: colors.glassStroke,
-  },
-  periodBtnActive: {
-    backgroundColor: 'rgba(108, 92, 231, 0.12)',
-    borderColor: colors.accentPurple,
-  },
-  periodBtnText: {
-    ...typography.smallMedium,
-    color: colors.secondary,
-  },
-  periodBtnTextActive: {
-    color: colors.accentPurple,
-    fontWeight: '700',
-  },
-
-  // ─── Preview Card ─────────────────────
-  previewCard: {
-    backgroundColor: colors.glassFill2,
-    borderRadius: radii.xxl,
-    borderWidth: 1,
-    borderColor: colors.glassStroke,
-    padding: spacing.lg,
-    gap: spacing.md,
-  },
-  previewTop: {
+  recapRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.md,
+    gap: space.md,
+    paddingVertical: space.md,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.hairline,
   },
-  previewEmoji: {
-    fontSize: 32,
+  recapRowFirst: {
+    borderTopWidth: 0,
   },
-  previewTextContainer: {
-    flex: 1,
+  rowPressed: {
+    opacity: 0.6,
   },
-  previewTitle: {
-    ...typography.bodySemibold,
-    color: colors.primary,
-    marginBottom: 2,
-  },
-  previewSubtitle: {
-    ...typography.small,
-    color: colors.secondary,
-  },
-  previewChips: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-  },
-  previewChip: {
+  recapSwatch: {
     width: 36,
     height: 36,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
+    borderRadius: 8,
   },
-  previewChipEmoji: {
-    fontSize: 16,
-  },
-
-  // ─── Empty State ─────────────────────
-  emptyState: {
-    alignItems: 'center',
-    paddingVertical: spacing.xxxl,
-    paddingHorizontal: spacing.xl,
-  },
-  emptyEmoji: {
-    fontSize: 56,
-    marginBottom: spacing.lg,
-  },
-  emptyTitle: {
-    ...typography.h2,
+  recapTitle: {
+    ...type.bodyMedium,
     color: colors.primary,
-    marginBottom: spacing.sm,
   },
-  emptySubtitle: {
-    ...typography.body,
-    color: colors.secondary,
+  recapMeta: {
+    ...type.caption,
+    color: colors.tertiary,
+    marginTop: 2,
+  },
+  recapGo: {
+    ...type.bodySmallMedium,
+    color: colors.primary,
+  },
+  recapFooter: {
+    ...type.caption,
+    color: colors.tertiary,
     textAlign: 'center',
-    marginBottom: spacing.xl,
-    lineHeight: 24,
-  },
-  emptyBtn: {
-    borderRadius: radii.full,
-    overflow: 'hidden',
-    ...shadows.glowPurple,
-  },
-  emptyBtnGradient: {
-    paddingHorizontal: 28,
-    paddingVertical: 14,
-    borderRadius: radii.full,
-  },
-  emptyBtnText: {
-    ...typography.bodySemibold,
-    color: '#fff',
+    paddingVertical: space.md,
   },
 
-  // ─── Loading ─────────────────────
-  loadingContainer: {
-    alignItems: 'center',
-    paddingVertical: spacing.xxxl,
+  // ─── Placeholder ─────────────────────────────────────────────
+  placeholder: {
+    padding: space.lg,
+    gap: space.sm,
   },
-  loadingEmoji: {
-    fontSize: 40,
-    marginBottom: spacing.md,
+  placeholderTitle: {
+    ...type.titleSmall,
+    color: colors.primary,
   },
-  loadingText: {
-    ...typography.body,
+  placeholderBody: {
+    ...type.bodySmall,
     color: colors.secondary,
   },
+  placeholderCta: {
+    alignSelf: 'flex-start',
+    marginTop: space.sm,
+    paddingHorizontal: space.md,
+    paddingVertical: 10,
+    borderRadius: radii.pill,
+    backgroundColor: colors.primary,
+  },
+  placeholderCtaText: {
+    ...type.bodySmallMedium,
+    color: colors.inverse,
+    fontWeight: '600',
+  },
 
-  // ─── Footer / Generate ─────────────────────
-  footer: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    paddingHorizontal: spacing.md,
-    paddingBottom: 38,
-    paddingTop: spacing.md,
-    backgroundColor: colors.background,
-    borderTopColor: colors.border,
+  // ─── Glance ──────────────────────────────────────────────────
+  glanceRow: {
+    flexDirection: 'row',
+    gap: space.md,
+  },
+  glanceCard: {
+    flex: 1,
+    padding: space.lg,
+  },
+  glanceBig: {
+    ...type.numeralMedium,
+    fontSize: 60,
+    lineHeight: 68,
+    letterSpacing: -2.5,
+    color: colors.primary,
+  },
+  glanceLabel: {
+    ...type.caption,
+    color: colors.tertiary,
+    marginTop: 2,
+  },
+  glanceCaption: {
+    ...type.bodySmall,
+    color: colors.secondary,
+    marginTop: space.sm,
+  },
+
+  connectedList: {
+    marginTop: space.md,
     borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.hairline,
   },
-  genProgressBar: {
-    height: 3,
-    backgroundColor: colors.border,
-    borderRadius: 2,
-    marginBottom: spacing.sm,
-    overflow: 'hidden',
+  connectedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.md,
+    paddingVertical: space.md,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.hairline,
   },
-  genProgressFill: {
-    height: 3,
-    backgroundColor: colors.accentFuchsia,
-    borderRadius: 2,
-  },
-  generateBtn: {
-    borderRadius: radii.full,
-    paddingVertical: 18,
+  connectedMark: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
-    overflow: 'hidden',
-    ...shadows.glowFuchsia,
   },
-  generateBtnDisabled: {
-    backgroundColor: colors.surface,
-    ...shadows.subtle,
+  connectedMarkText: {
+    color: colors.inverse,
+    fontWeight: '700',
+    fontSize: 14,
   },
-  generateBtnText: {
-    ...typography.bodySemibold,
-    color: '#fff',
-    fontSize: 17,
-    letterSpacing: 0.3,
+  connectedName: {
+    ...type.bodyMedium,
+    color: colors.primary,
+  },
+  connectedTag: {
+    ...type.caption,
+    color: colors.tertiary,
+    marginTop: 1,
+  },
+  connectedStatus: {
+    ...type.caption,
+    color: colors.mint,
+    fontWeight: '600',
+  },
+
+  cardPressed: {
+    opacity: 0.92,
+    transform: [{ scale: 0.985 }],
   },
 });

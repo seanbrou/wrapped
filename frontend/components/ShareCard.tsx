@@ -1,211 +1,188 @@
 import React, { useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, Animated, Dimensions, TouchableOpacity, Share } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import { View, Text, StyleSheet, Animated, Easing, Pressable, Share, Dimensions } from 'react-native';
 import * as Haptics from 'expo-haptics';
-import { colors, typography, spacing, radii, shadows, motion } from '../lib/theme';
+import { colors, type, space, radii, motion, type StoryAccent } from '../lib/theme';
 
 const { width: W } = Dimensions.get('window');
 
 interface Props {
   stat: string;
-  headline?: string;
+  headline: string;
   service: string;
+  accent: StoryAccent;
 }
 
-export function ShareCard({ stat, headline, service }: Props) {
-  const contentOpacity = useRef(new Animated.Value(0)).current;
-  const contentScale = useRef(new Animated.Value(0.9)).current;
-  const btnOpacity = useRef(new Animated.Value(0)).current;
-  const glowPulse = useRef(new Animated.Value(0)).current;
+// Poster-style closer. Editorial lockup + share button.
+export function ShareCard({ stat, headline, accent }: Props) {
+  const mark = useRef(new Animated.Value(0)).current;
+  const title = useRef(new Animated.Value(0)).current;
+  const detail = useRef(new Animated.Value(0)).current;
+  const cta = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     Animated.sequence([
-      Animated.delay(300),
-      Animated.parallel([
-        Animated.timing(contentOpacity, { toValue: 1, duration: 600, useNativeDriver: true }),
-        Animated.spring(contentScale, { toValue: 1, ...motion.springGentle, useNativeDriver: true }),
-      ]),
-      Animated.timing(btnOpacity, { toValue: 1, duration: 400, useNativeDriver: true }),
+      Animated.delay(120),
+      Animated.spring(mark, { toValue: 1, ...motion.springSoft, useNativeDriver: true }),
+      Animated.timing(title, {
+        toValue: 1,
+        duration: 600,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+      Animated.timing(detail, {
+        toValue: 1,
+        duration: 500,
+        useNativeDriver: true,
+      }),
+      Animated.spring(cta, { toValue: 1, ...motion.springSoft, useNativeDriver: true }),
     ]).start();
-
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(glowPulse, { toValue: 1, duration: 3000, useNativeDriver: true }),
-        Animated.timing(glowPulse, { toValue: 0, duration: 3000, useNativeDriver: true }),
-      ])
-    ).start();
   }, []);
 
-  async function handleShare() {
+  async function share() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     try {
       await Share.share({
-        message: `${headline || 'My 2026, Wrapped.'}\n\n${stat}\n\nMade with Wrapped ✨`,
+        message: `${headline}\n${stat}\nMade with Wrapped.`,
       });
     } catch {}
   }
 
   return (
-    <View style={styles.container}>
-      {/* Multi-color gradient background */}
-      <LinearGradient
-        colors={[colors.accentPurple, colors.accentFuchsia, colors.accentCyan]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={styles.gradientBg}
-      />
-
-      {/* Dark overlay for readability */}
-      <View style={styles.overlay} />
-
-      {/* Glow */}
+    <View style={styles.root}>
       <Animated.View
         style={[
-          styles.glow,
+          styles.markRow,
           {
-            opacity: glowPulse.interpolate({ inputRange: [0, 1], outputRange: [0.08, 0.2] }),
+            opacity: mark,
+            transform: [{
+              translateY: mark.interpolate({ inputRange: [0, 1], outputRange: [12, 0] }),
+            }],
           },
         ]}
-      />
+      >
+        <Text style={[styles.mark, { color: accent.fg }]}>wrapped.</Text>
+        <Text style={[styles.year, { color: accent.fg }]}>2026</Text>
+      </Animated.View>
 
-      <View style={styles.content}>
-        {/* Logo */}
-        <Animated.View
-          style={[
-            styles.logoContainer,
-            {
-              opacity: contentOpacity,
-              transform: [{ scale: contentScale }],
-            },
-          ]}
-        >
-          <View style={styles.logoBadge}>
-            <Text style={styles.logoText}>W</Text>
-          </View>
-        </Animated.View>
-
-        {/* Headline */}
+      <View style={styles.center}>
         <Animated.Text
           style={[
-            styles.headline,
+            styles.title,
             {
-              opacity: contentOpacity,
-              transform: [{ scale: contentScale }],
+              color: accent.fg,
+              opacity: title,
+              transform: [{
+                translateY: title.interpolate({ inputRange: [0, 1], outputRange: [24, 0] }),
+              }],
             },
           ]}
         >
-          {headline || 'My 2026, Wrapped.'}
+          {headline}
         </Animated.Text>
 
-        {/* Stat summary */}
+        <Animated.View
+          style={[styles.divider, { backgroundColor: accent.fg, opacity: title.interpolate({
+            inputRange: [0, 1],
+            outputRange: [0, 0.4],
+          }) }]}
+        />
+
         <Animated.Text
           style={[
-            styles.stat,
+            styles.detail,
             {
-              opacity: contentOpacity,
-              transform: [{ scale: contentScale }],
+              color: accent.fg,
+              opacity: detail,
             },
           ]}
         >
           {stat}
         </Animated.Text>
-
-        {/* Share button */}
-        <Animated.View style={{ opacity: btnOpacity }}>
-          <TouchableOpacity style={styles.shareBtn} onPress={handleShare} activeOpacity={0.85}>
-            <Text style={styles.shareBtnText}>Share Your Wrapped</Text>
-          </TouchableOpacity>
-        </Animated.View>
-
-        {/* Watermark */}
-        <Animated.Text style={[styles.watermark, { opacity: contentOpacity }]}>
-          Made with Wrapped ✨
-        </Animated.Text>
       </View>
+
+      <Animated.View
+        style={[
+          styles.footer,
+          {
+            opacity: cta,
+            transform: [{
+              translateY: cta.interpolate({ inputRange: [0, 1], outputRange: [20, 0] }),
+            }],
+          },
+        ]}
+      >
+        <Pressable
+          onPress={share}
+          style={({ pressed }) => [
+            styles.shareBtn,
+            { backgroundColor: accent.fg },
+            pressed && { opacity: 0.9, transform: [{ scale: 0.98 }] },
+          ]}
+        >
+          <Text style={[styles.shareText, { color: accent.bg }]}>Share your year</Text>
+        </Pressable>
+      </Animated.View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  root: {
     flex: 1,
-    backgroundColor: colors.background,
+    paddingHorizontal: space.lg,
+    paddingTop: 110,
+    paddingBottom: 80,
+  },
+  markRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  mark: {
+    fontSize: 22,
+    fontWeight: '700',
+    letterSpacing: -0.3,
+  },
+  year: {
+    ...type.eyebrow,
+    fontSize: 11,
+    opacity: 0.75,
+  },
+  center: {
+    flex: 1,
     justifyContent: 'center',
-    alignItems: 'center',
-    overflow: 'hidden',
+    gap: space.lg,
   },
-  gradientBg: {
-    ...StyleSheet.absoluteFillObject,
-    opacity: 0.15,
+  title: {
+    fontSize: 64,
+    lineHeight: 72,
+    fontWeight: '800',
+    letterSpacing: -2.4,
+    includeFontPadding: false,
+    paddingTop: 4,
   },
-  overlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: colors.background,
-    opacity: 0.7,
+  divider: {
+    width: 48,
+    height: 2,
+    borderRadius: 1,
   },
-  glow: {
-    position: 'absolute',
-    width: W * 1.5,
-    height: W * 1.5,
-    borderRadius: W,
-    backgroundColor: colors.accentFuchsia,
-    top: -W * 0.3,
-    left: -W * 0.25,
+  detail: {
+    ...type.body,
+    opacity: 0.82,
+    maxWidth: W - space.lg * 2 - 20,
   },
-  content: {
-    alignItems: 'center',
-    paddingHorizontal: spacing.xl,
-  },
-  logoContainer: {
-    marginBottom: spacing.xl,
-  },
-  logoBadge: {
-    width: 64,
-    height: 64,
-    borderRadius: 20,
-    backgroundColor: colors.accentFuchsia,
-    alignItems: 'center',
-    justifyContent: 'center',
-    ...shadows.glowFuchsia,
-  },
-  logoText: {
-    fontSize: 32,
-    fontWeight: '900',
-    color: '#fff',
-    letterSpacing: -2,
-  },
-  headline: {
-    ...typography.display,
-    fontSize: 36,
-    lineHeight: 42,
-    color: colors.primary,
-    textAlign: 'center',
-    marginBottom: spacing.lg,
-    letterSpacing: -1,
-  },
-  stat: {
-    ...typography.body,
-    color: colors.secondary,
-    textAlign: 'center',
-    lineHeight: 26,
-    marginBottom: spacing.xxl,
-    maxWidth: 300,
+  footer: {
+    alignItems: 'stretch',
   },
   shareBtn: {
-    backgroundColor: '#fff',
-    paddingHorizontal: 32,
-    paddingVertical: 16,
-    borderRadius: radii.full,
-    marginBottom: spacing.xl,
+    height: 56,
+    borderRadius: radii.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  shareBtnText: {
-    ...typography.bodySemibold,
-    color: colors.background,
-    letterSpacing: 0.3,
-  },
-  watermark: {
-    ...typography.caption,
-    color: colors.tertiary,
-    letterSpacing: 1,
+  shareText: {
+    ...type.bodyMedium,
+    fontWeight: '700',
+    letterSpacing: -0.1,
   },
 });

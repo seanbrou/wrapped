@@ -1,188 +1,141 @@
 import React, { useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, Animated, Dimensions } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
-import { colors, typography, spacing, radii, shadows, motion, serviceColors } from '../lib/theme';
+import { View, Text, StyleSheet, Animated, Easing, Dimensions } from 'react-native';
+import { colors, type, space, motion, serviceById, type StoryAccent } from '../lib/theme';
 
-const { width: W, height: H } = Dimensions.get('window');
+const { width: W } = Dimensions.get('window');
 
 interface Props {
   stat: string;
   value: string;
-  unit: string;
+  unit?: string;
   comparison: string;
   service: string;
+  accent: StoryAccent;
 }
 
-export function HeroStatCard({ stat, value, unit, comparison, service }: Props) {
-  const svc = serviceColors[service] || { primary: colors.accentFuchsia, gradient: [colors.accentPurple, colors.accentFuchsia] as const, bg: 'rgba(224,64,251,0.1)' };
-
-  const statScale = useRef(new Animated.Value(0)).current;
-  const statOpacity = useRef(new Animated.Value(0)).current;
-  const labelOpacity = useRef(new Animated.Value(0)).current;
-  const labelY = useRef(new Animated.Value(15)).current;
-  const compOpacity = useRef(new Animated.Value(0)).current;
-  const compY = useRef(new Animated.Value(10)).current;
-  const glowPulse = useRef(new Animated.Value(0)).current;
+// Full-bleed poster. The numeral is the composition.
+export function HeroStatCard({ stat, value, comparison, service, accent }: Props) {
+  const svc = serviceById[service];
+  const numeralFade = useRef(new Animated.Value(0)).current;
+  const numeralY = useRef(new Animated.Value(24)).current;
+  const captionFade = useRef(new Animated.Value(0)).current;
+  const footerFade = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     Animated.sequence([
+      Animated.delay(120),
+      Animated.parallel([
+        Animated.timing(numeralFade, {
+          toValue: 1,
+          duration: 600,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+        Animated.spring(numeralY, { toValue: 0, ...motion.springSoft, useNativeDriver: true }),
+      ]),
+      Animated.timing(captionFade, {
+        toValue: 1,
+        duration: 400,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
       Animated.delay(200),
-      Animated.parallel([
-        Animated.spring(statScale, { toValue: 1, ...motion.springBouncy, useNativeDriver: true }),
-        Animated.timing(statOpacity, { toValue: 1, duration: 400, useNativeDriver: true }),
-      ]),
-      Animated.parallel([
-        Animated.timing(labelOpacity, { toValue: 1, duration: 350, useNativeDriver: true }),
-        Animated.spring(labelY, { toValue: 0, ...motion.springGentle, useNativeDriver: true }),
-      ]),
-      Animated.delay(200),
-      Animated.parallel([
-        Animated.timing(compOpacity, { toValue: 1, duration: 300, useNativeDriver: true }),
-        Animated.spring(compY, { toValue: 0, ...motion.springGentle, useNativeDriver: true }),
-      ]),
+      Animated.timing(footerFade, {
+        toValue: 1,
+        duration: 400,
+        useNativeDriver: true,
+      }),
     ]).start();
-
-    // Glow pulse
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(glowPulse, { toValue: 1, duration: 2500, useNativeDriver: true }),
-        Animated.timing(glowPulse, { toValue: 0, duration: 2500, useNativeDriver: true }),
-      ])
-    ).start();
   }, []);
 
+  const statLength = stat.length;
+  const scale = statLength > 5 ? 0.7 : statLength > 4 ? 0.85 : 1;
+
   return (
-    <View style={styles.container}>
-      {/* Background glow */}
-      <Animated.View
-        style={[
-          styles.bgGlow,
-          {
-            backgroundColor: svc.primary,
-            opacity: glowPulse.interpolate({ inputRange: [0, 1], outputRange: [0.04, 0.1] }),
-          },
-        ]}
-      />
+    <View style={styles.root}>
+      <View style={styles.top}>
+        <Text style={[styles.eyebrow, { color: accent.fg }]}>
+          {svc?.name ?? service} · {svc?.signal ?? 'metric'}
+        </Text>
+      </View>
 
-      <View style={styles.content}>
-        {/* Service label */}
-        <View style={[styles.serviceBadge, { backgroundColor: svc.bg }]}>
-          <View style={[styles.serviceDot, { backgroundColor: svc.primary }]} />
-          <Text style={[styles.serviceLabel, { color: svc.primary }]}>
-            {service.replace('_', ' ').toUpperCase()}
-          </Text>
-        </View>
-
-        {/* Big stat */}
+      <View style={styles.center}>
         <Animated.Text
           style={[
-            styles.stat,
+            styles.numeral,
             {
-              opacity: statOpacity,
-              transform: [{ scale: statScale }],
+              color: accent.fg,
+              fontSize: 220 * scale,
+              lineHeight: 240 * scale,
+              letterSpacing: -14 * scale,
+              opacity: numeralFade,
+              transform: [{ translateY: numeralY }],
             },
           ]}
+          numberOfLines={1}
+          adjustsFontSizeToFit
         >
           {stat}
         </Animated.Text>
 
-        {/* Label */}
         <Animated.Text
-          style={[
-            styles.label,
-            {
-              opacity: labelOpacity,
-              transform: [{ translateY: labelY }],
-            },
-          ]}
+          style={[styles.caption, { color: accent.fg, opacity: captionFade }]}
         >
           {value}
         </Animated.Text>
-
-        {/* Comparison */}
-        <Animated.View
-          style={[
-            styles.compContainer,
-            {
-              opacity: compOpacity,
-              transform: [{ translateY: compY }],
-            },
-          ]}
-        >
-          <View style={[styles.compCard, { borderColor: svc.primary + '20' }]}>
-            <Text style={styles.compText}>{comparison}</Text>
-          </View>
-        </Animated.View>
       </View>
+
+      <Animated.View style={[styles.bottom, { opacity: footerFade }]}>
+        <View style={[styles.rule, { backgroundColor: accent.fg }]} />
+        <Text style={[styles.comparison, { color: accent.fg }]}>
+          {comparison.replace(/[🔥📖🎸🎤🌀🎵🌊🏃🚀🎮☀️🏛️✨⚡🔒❤️]/gu, '').trim()}
+        </Text>
+      </Animated.View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  root: {
     flex: 1,
-    backgroundColor: colors.background,
-    alignItems: 'center',
+    paddingHorizontal: space.lg,
+    paddingTop: 110,
+    paddingBottom: 80,
+  },
+  top: {
+    marginBottom: space.lg,
+  },
+  eyebrow: {
+    ...type.eyebrow,
+    opacity: 0.75,
+  },
+  center: {
+    flex: 1,
     justifyContent: 'center',
-    overflow: 'hidden',
   },
-  bgGlow: {
-    position: 'absolute',
-    width: W * 1.5,
-    height: W * 1.5,
-    borderRadius: W,
-    top: -W * 0.3,
-    right: -W * 0.4,
+  numeral: {
+    fontWeight: '800',
+    marginLeft: -6,
+    includeFontPadding: false,
+    paddingTop: 8,
   },
-  content: {
-    alignItems: 'center',
-    paddingHorizontal: spacing.xl,
+  caption: {
+    ...type.displaySmall,
+    marginTop: space.md,
+    opacity: 0.82,
   },
-  serviceBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: radii.full,
-    gap: 6,
-    marginBottom: spacing.xxl,
+  bottom: {
+    gap: space.md,
   },
-  serviceDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
+  rule: {
+    width: 40,
+    height: 2,
+    borderRadius: 1,
+    opacity: 0.7,
   },
-  serviceLabel: {
-    ...typography.overline,
-    fontSize: 10,
-  },
-  stat: {
-    ...typography.monoHero,
-    color: colors.primary,
-    textAlign: 'center',
-    marginBottom: spacing.md,
-  },
-  label: {
-    ...typography.h2,
-    color: colors.secondary,
-    textAlign: 'center',
-    marginBottom: spacing.xl,
-  },
-  compContainer: {
-    width: '100%',
-  },
-  compCard: {
-    backgroundColor: colors.glassFill2,
-    borderRadius: radii.lg,
-    borderWidth: 1,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    alignItems: 'center',
-  },
-  compText: {
-    ...typography.bodyMedium,
-    color: colors.secondary,
-    textAlign: 'center',
-    lineHeight: 24,
+  comparison: {
+    ...type.bodyMedium,
+    maxWidth: W - space.lg * 2 - 40,
+    opacity: 0.78,
   },
 });

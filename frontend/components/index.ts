@@ -5,5 +5,5 @@ export { ChartCard } from './ChartCard';
 export { CommunityCard } from './CommunityCard';
 export { ComparisonCard } from './ComparisonCard';
 export { ShareCard } from './ShareCard';
-export { ProgressDots } from './ProgressDots';
-export { LoadingRing } from './LoadingRing';
+export { default as Confetti } from './Confetti';
+export { default as LiquidGlass } from './LiquidGlass';
