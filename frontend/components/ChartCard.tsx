@@ -1,122 +1,128 @@
 import React, { useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, Animated, Dimensions } from 'react-native';
-import Svg, { Path, Line, Text as SvgText, Rect, Defs, LinearGradient, Stop } from 'react-native-svg';
-import { colors } from '../lib/theme';
+import Svg, { Line, Path, Circle, Defs, LinearGradient, Stop, Rect } from 'react-native-svg';
+import { colors, typography, spacing, radii } from '../lib/theme';
 
 interface Props {
-  chartType: 'area' | 'bar' | 'donut';
+  title: string;
+  chartType: 'area' | 'bar';
   data: number[];
   labels: string[];
-  unit: string;
-  title?: string;
+  service: string;
 }
 
-const W = Dimensions.get('window').width - 48;
-const H = 200;
-const PAD = { top: 20, right: 16, bottom: 36, left: 16 };
+const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
+const CHART_W = SCREEN_W - 64;
+const CHART_H = 200;
 
-export function ChartCard({ chartType, data, labels, unit, title }: Props) {
-  const animProgress = useRef(new Animated.Value(0)).current;
+export function ChartCard({ title, chartType, data, labels, service }: Props) {
+  const pathAnim = useRef(new Animated.Value(0)).current;
+  const opacityAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    Animated.timing(animProgress, {
-      toValue: 1,
-      duration: 1200,
-      useNativeDriver: false,
-    }).start();
+    Animated.parallel([
+      Animated.timing(pathAnim, { toValue: 1, duration: 1200, useNativeDriver: true }),
+      Animated.timing(opacityAnim, { toValue: 1, duration: 400, useNativeDriver: true }),
+    ]).start();
   }, []);
 
-  const maxVal = Math.max(...data, 1);
+  const maxVal = Math.max(...data);
   const minVal = Math.min(...data);
-  const range = maxVal - minVal || 1;
-  const chartW = W - PAD.left - PAD.right;
-  const chartH = H - PAD.top - PAD.bottom;
-
-  const innerW = chartW / Math.max(data.length - 1, 1);
-
-  // Build SVG path for area chart
-  const points = data.map((v, i) => ({
-    x: PAD.left + i * innerW,
-    y: PAD.top + chartH - ((v - minVal) / range) * chartH,
-  }));
-
-  const areaPath = [
-    `M ${points[0].x} ${PAD.top + chartH}`,
-    ...points.map(p => `L ${p.x} ${p.y}`),
-    `L ${points[points.length - 1].x} ${PAD.top + chartH}`,
-    'Z',
-  ].join(' ');
-
-  const linePath = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
-
-  const animatedOpacity = animProgress.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0, 1],
-  });
 
   return (
     <View style={styles.container}>
-      {title && <Text style={styles.title}>{title}</Text>}
-      <Svg width={W} height={H}>
+      <View style={styles.serviceBadge}>
+        <Text style={styles.serviceText}>{service.replace('_', ' ')}</Text>
+      </View>
+
+      <Animated.View style={{ opacity: opacityAnim }}>
+        <Text style={styles.title}>{title}</Text>
+      </Animated.View>
+
+      {chartType === 'area' ? (
+        <AreaChart data={data} labels={labels} pathProgress={pathAnim} />
+      ) : (
+        <BarChart data={data} labels={labels} progress={pathAnim} />
+      )}
+    </View>
+  );
+}
+
+function AreaChart({ data, labels, pathProgress }: { data: number[]; labels: string[]; pathProgress: Animated.Value }) {
+  const maxVal = Math.max(...data);
+  const points = data.map((d, i) => ({
+    x: (i / (data.length - 1)) * CHART_W,
+    y: CHART_H - (d / maxVal) * (CHART_H - 20) - 10,
+  }));
+
+  // Smooth bezier path
+  let pathStr = `M ${points[0].x} ${points[0].y}`;
+  for (let i = 1; i < points.length; i++) {
+    const prev = points[i - 1];
+    const curr = points[i];
+    const cpx1 = prev.x + (curr.x - prev.x) / 3;
+    const cpx2 = prev.x + 2 * (curr.x - prev.x) / 3;
+    pathStr += ` C ${cpx1} ${prev.y}, ${cpx2} ${curr.y}, ${curr.x} ${curr.y}`;
+  }
+
+  // Fill path (area under curve)
+  const fillPath = `${pathStr} L ${points[points.length - 1].x} ${CHART_H} L ${points[0].x} ${CHART_H} Z`;
+
+  return (
+    <View style={styles.chartContainer}>
+      <Svg width={CHART_W} height={CHART_H}>
         <Defs>
-          <LinearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
-            <Stop offset="0%" stopColor="#6C5CE7" stopOpacity="0.4" />
-            <Stop offset="100%" stopColor="#6C5CE7" stopOpacity="0.02" />
+          <LinearGradient id="areaFill" x1="0" y1="0" x2="0" y2="1">
+            <Stop offset="0%" stopColor="#E040FB" stopOpacity="0.3" />
+            <Stop offset="100%" stopColor="#7C4DFF" stopOpacity="0.02" />
           </LinearGradient>
-          <LinearGradient id="barGrad" x1="0" y1="0" x2="0" y2="1">
-            <Stop offset="0%" stopColor="#6C5CE7" />
-            <Stop offset="100%" stopColor="#00D4FF" />
+          <LinearGradient id="lineGrad" x1="0" y1="0" x2="1" y2="0">
+            <Stop offset="0%" stopColor="#7C4DFF" />
+            <Stop offset="50%" stopColor="#E040FB" />
+            <Stop offset="100%" stopColor="#00F5FF" />
           </LinearGradient>
         </Defs>
-
-        {chartType === 'area' && (
-          <>
-            <Path d={areaPath} fill="url(#areaGrad)" />
-            <Path
-              d={linePath}
-              stroke="#6C5CE7"
-              strokeWidth={2.5}
-              fill="none"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </>
-        )}
-
-        {chartType === 'bar' && data.map((v, i) => {
-          const barH = ((v - minVal) / range) * chartH * 0.8;
-          const x = PAD.left + i * innerW + innerW * 0.15;
-          const barW = innerW * 0.7;
-          const y = PAD.top + chartH - barH;
-          return (
-            <Rect
-              key={i}
-              x={x}
-              y={y}
-              width={barW}
-              height={barH}
-              rx={4}
-              fill="url(#barGrad)"
-              opacity={0.8 + 0.2 * (i / data.length)}
-            />
-          );
-        })}
-
-        {/* X-axis labels */}
-        {labels.map((label, i) => (
-          <SvgText
-            key={i}
-            x={PAD.left + i * innerW}
-            y={H - 8}
-            fontSize={10}
-            fill={colors.secondary}
-            textAnchor="middle"
-          >
-            {label}
-          </SvgText>
+        <Path d={fillPath} fill="url(#areaFill)" />
+        <Path d={pathStr} stroke="url(#lineGrad)" strokeWidth={3} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+        {/* Data points */}
+        {points.map((p, i) => (
+          <Circle key={i} cx={p.x} cy={p.y} r={4} fill={colors.accentFuchsia} stroke={colors.primary} strokeWidth={2} />
         ))}
       </Svg>
-      <Text style={styles.unit}>{unit}</Text>
+      {/* Labels */}
+      <View style={styles.labelRow}>
+        {labels.map((l, i) => (
+          <Text key={i} style={styles.chartLabel}>{l}</Text>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+function BarChart({ data, labels, progress }: { data: number[]; labels: string[]; progress: Animated.Value }) {
+  const maxVal = Math.max(...data);
+  const colors_arr = ['#7C4DFF', '#E040FB', '#00F5FF', '#FFD700'];
+
+  return (
+    <View style={styles.barContainer}>
+      {data.map((d, i) => {
+        const barHeight = maxVal > 0 ? (d / maxVal) * 140 : 0;
+        return (
+          <View key={i} style={styles.barItem}>
+            <Text style={styles.barValue}>{d.toLocaleString()}</Text>
+            <View style={styles.barTrack}>
+              <Animated.View style={[
+                styles.barFill,
+                {
+                  backgroundColor: colors_arr[i % colors_arr.length],
+                  height: barHeight,
+                },
+              ]} />
+            </View>
+            <Text style={styles.barLabel}>{labels[i]}</Text>
+          </View>
+        );
+      })}
     </View>
   );
 }
@@ -126,20 +132,77 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 24,
+    paddingHorizontal: spacing.xl,
+    backgroundColor: colors.background,
+  },
+  serviceBadge: {
+    position: 'absolute',
+    top: 100,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderRadius: radii.full,
+    backgroundColor: colors.glassFill,
+    borderWidth: 1,
+    borderColor: colors.glassStroke,
+  },
+  serviceText: {
+    ...typography.captionUppercase,
+    color: colors.secondary,
+    letterSpacing: 2,
   },
   title: {
-    fontSize: 22,
-    fontWeight: '700',
+    ...typography.h3,
     color: colors.primary,
-    marginBottom: 16,
     textAlign: 'center',
+    marginBottom: spacing.lg,
   },
-  unit: {
-    fontSize: 12,
+  chartContainer: {
+    alignItems: 'center',
+  },
+  labelRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    width: CHART_W,
+    marginTop: spacing.sm,
+  },
+  chartLabel: {
+    ...typography.caption,
+    color: colors.tertiary,
+    fontSize: 10,
+  },
+  barContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-end',
+    width: '100%',
+    paddingHorizontal: spacing.md,
+    height: 200,
+  },
+  barItem: {
+    alignItems: 'center',
+    flex: 1,
+    gap: spacing.xs,
+  },
+  barValue: {
+    ...typography.caption,
+    color: colors.primary,
+    fontWeight: '700',
+  },
+  barTrack: {
+    width: 28,
+    height: 140,
+    backgroundColor: colors.surface,
+    borderRadius: radii.sm,
+    overflow: 'hidden',
+    justifyContent: 'flex-end',
+  },
+  barFill: {
+    width: '100%',
+    borderRadius: radii.sm,
+  },
+  barLabel: {
+    ...typography.caption,
     color: colors.secondary,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-    marginTop: 8,
+    fontSize: 10,
   },
 });

@@ -1,50 +1,50 @@
 import React, { useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, Animated } from 'react-native';
 import Svg, { Circle, Defs, LinearGradient, Stop } from 'react-native-svg';
-import { colors } from '../lib/theme';
+import { colors, typography, spacing, radii } from '../lib/theme';
 
 interface Props {
-  percentile: number; // e.g. 5 = top 5%
+  percentile: number;
   metric: string;
   value: string;
+  service: string;
 }
 
 const SIZE = 180;
-const STROKE = 14;
+const STROKE = 10;
 const R = (SIZE - STROKE) / 2;
-const CIRC = 2 * Math.PI * R;
+const CIRCUMFERENCE = 2 * Math.PI * R;
 
-export function CommunityCard({ percentile, metric, value }: Props) {
-  const progressAnim = useRef(new Animated.Value(0)).current;
-  const opacityAnim = useRef(new Animated.Value(0)).current;
-  const scaleAnim = useRef(new Animated.Value(0.5)).current;
+export function CommunityCard({ percentile, metric, value, service }: Props) {
+  const percentDisplay = Math.min(100, percentile);
+  const strokeDash = CIRCUMFERENCE * (1 - percentile / 100);
 
-  const percentDisplay = percentile;
-  const circumference = CIRC;
-  const strokeDash = progressAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [circumference, circumference * (1 - percentDisplay / 100)],
-  });
+  const ringAnim = useRef(new Animated.Value(0)).current;
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const scaleAnim = useRef(new Animated.Value(0.8)).current;
 
   useEffect(() => {
     Animated.parallel([
-      Animated.spring(scaleAnim, { toValue: 1, friction: 5, tension: 60, useNativeDriver: true }),
-      Animated.timing(opacityAnim, { toValue: 1, duration: 500, useNativeDriver: true }),
-      Animated.timing(progressAnim, { toValue: 1, duration: 1800, useNativeDriver: false }),
+      Animated.spring(ringAnim, { toValue: 1, damping: 12, stiffness: 60, useNativeDriver: true }),
+      Animated.spring(scaleAnim, { toValue: 1, damping: 10, stiffness: 80, useNativeDriver: true }),
+      Animated.timing(fadeAnim, { toValue: 1, duration: 600, useNativeDriver: true }),
     ]).start();
   }, []);
 
   return (
     <View style={styles.container}>
-      <Animated.View style={[styles.circleWrap, {
-        opacity: opacityAnim,
-        transform: [{ scale: scaleAnim }],
-      }]}>
+      <View style={styles.serviceBadge}>
+        <Text style={styles.serviceText}>{service.replace('_', ' ')}</Text>
+      </View>
+
+      {/* Ring */}
+      <Animated.View style={[styles.ringWrap, { transform: [{ scale: scaleAnim }] }]}>
         <Svg width={SIZE} height={SIZE}>
           <Defs>
             <LinearGradient id="pg" x1="0%" y1="0%" x2="100%" y2="100%">
-              <Stop offset="0%" stopColor="#6C5CE7" />
-              <Stop offset="100%" stopColor="#00D4FF" />
+              <Stop offset="0%" stopColor="#7C4DFF" />
+              <Stop offset="50%" stopColor="#E040FB" />
+              <Stop offset="100%" stopColor="#00F5FF" />
             </LinearGradient>
           </Defs>
           {/* Background circle */}
@@ -52,7 +52,7 @@ export function CommunityCard({ percentile, metric, value }: Props) {
             cx={SIZE / 2}
             cy={SIZE / 2}
             r={R}
-            stroke={colors.border}
+            stroke={colors.surface}
             strokeWidth={STROKE}
             fill="none"
           />
@@ -64,19 +64,23 @@ export function CommunityCard({ percentile, metric, value }: Props) {
             stroke="url(#pg)"
             strokeWidth={STROKE}
             fill="none"
-            strokeDasharray={`${circumference} ${circumference}`}
+            strokeDasharray={`${CIRCUMFERENCE} ${CIRCUMFERENCE}`}
             strokeDashoffset={strokeDash as any}
             strokeLinecap="round"
             transform={`rotate(-90 ${SIZE / 2} ${SIZE / 2})`}
           />
         </Svg>
-        <View style={styles.innerText}>
+        <View style={styles.ringInnerText}>
           <Text style={styles.percentNum}>Top {percentDisplay}%</Text>
           <Text style={styles.percentLabel}>worldwide</Text>
         </View>
       </Animated.View>
-      <Text style={styles.metric}>{metric}</Text>
-      <Text style={styles.value}>{value}</Text>
+
+      {/* Metric and value */}
+      <Animated.View style={{ opacity: fadeAnim, alignItems: 'center' }}>
+        <Text style={styles.metric}>{metric}</Text>
+        <Text style={styles.value}>{value}</Text>
+      </Animated.View>
     </View>
   );
 }
@@ -86,40 +90,55 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 32,
+    paddingHorizontal: spacing.xl,
+    backgroundColor: colors.background,
   },
-  circleWrap: {
+  serviceBadge: {
+    position: 'absolute',
+    top: 100,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderRadius: radii.full,
+    backgroundColor: colors.glassFill,
+    borderWidth: 1,
+    borderColor: colors.glassStroke,
+  },
+  serviceText: {
+    ...typography.captionUppercase,
+    color: colors.secondary,
+    letterSpacing: 2,
+  },
+  ringWrap: {
     width: SIZE,
     height: SIZE,
     justifyContent: 'center',
     alignItems: 'center',
+    marginBottom: spacing.lg,
   },
-  innerText: {
+  ringInnerText: {
     position: 'absolute',
     justifyContent: 'center',
     alignItems: 'center',
   },
   percentNum: {
+    ...typography.h1,
     fontSize: 28,
-    fontWeight: '900',
     color: colors.primary,
   },
   percentLabel: {
-    fontSize: 12,
+    ...typography.caption,
     color: colors.secondary,
     marginTop: 2,
   },
   metric: {
-    fontSize: 16,
+    ...typography.captionUppercase,
     color: colors.accentCyan,
-    marginTop: 20,
-    fontWeight: '600',
-    textTransform: 'capitalize',
+    letterSpacing: 2,
+    marginBottom: spacing.xs,
   },
   value: {
-    fontSize: 20,
-    fontWeight: '700',
+    ...typography.h3,
     color: colors.primary,
-    marginTop: 4,
+    fontWeight: '700',
   },
 });

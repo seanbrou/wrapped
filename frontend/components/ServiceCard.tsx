@@ -1,191 +1,120 @@
 import React, { useState } from 'react';
-import {
-  View,
-  Text,
-  TouchableOpacity,
-  Image,
-  StyleSheet,
-  ActivityIndicator,
-} from 'react-native';
-import * as WebBrowser from 'expo-web-browser';
+import { View, Text, StyleSheet, TouchableOpacity, Animated } from 'react-native';
 import * as Haptics from 'expo-haptics';
-import { colors, gradients, getServiceGradient } from '../lib/theme';
-import type { ServiceInfo } from '../lib/api';
+import { colors, typography, spacing, radii } from '../lib/theme';
+import { ServiceInfo } from '../lib/api';
 
 interface Props {
-  service: ServiceInfo & {
-    description?: string;
-    color?: string;
+  service: ServiceInfo;
+  onConnect: () => void;
+  detail?: {
+    emoji: string;
+    description: string;
+    color: string;
+    gradient: readonly [string, string];
   };
-  onConnect: (id: string) => Promise<void>;
-  onRevoke: (id: string) => Promise<void>;
-  onSync?: (id: string) => Promise<void>;
 }
 
-export function ServiceCard({ service, onConnect, onRevoke, onSync }: Props) {
-  const [loading, setLoading] = useState(false);
-  const [syncing, setSyncing] = useState(false);
-  const gradColors = getServiceGradient(service.id);
+export function ServiceCard({ service, onConnect, detail }: Props) {
+  const [scale] = useState(new Animated.Value(1));
+  const isConnected = service.isConnected;
 
-  async function handleConnect() {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    setLoading(true);
-    try {
-      // In production: call api.getAuthorizeUrl and open web browser
-      // For demo: simulate a successful connect after a delay
-      await new Promise(r => setTimeout(r, 1500));
-      await onConnect(service.id);
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLoading(false);
-    }
+  function handlePress() {
+    Haptics.selectionAsync();
+    Animated.sequence([
+      Animated.spring(scale, { toValue: 0.97, useNativeDriver: true }),
+      Animated.spring(scale, { toValue: 1, useNativeDriver: true }),
+    ]).start();
+    onConnect();
   }
 
-  async function handleSync() {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setSyncing(true);
-    try {
-      await onSync?.(service.id);
-    } finally {
-      setSyncing(false);
-    }
-  }
-
-  async function handleRevoke() {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-    await onRevoke(service.id);
-  }
+  const accentColor = detail?.color || colors.accentFuchsia;
+  const emoji = detail?.emoji || '📦';
+  const description = detail?.description || '';
 
   return (
-    <View style={styles.card}>
-      <View style={styles.row}>
-        <View style={[styles.iconWrap, { borderColor: gradColors[0] + '40' }]}>
-          <Text style={styles.iconText}>{service.name.charAt(0)}</Text>
-        </View>
-        <View style={styles.info}>
-          <Text style={styles.name}>{service.name}</Text>
-          {service.isConnected ? (
-            <Text style={styles.statusConnected}>
-              {service.lastSyncedAt
-                ? `Synced ${new Date(service.lastSyncedAt).toLocaleDateString()}`
-                : 'Connected'}
+    <Animated.View style={{ transform: [{ scale }] }}>
+      <TouchableOpacity
+        style={[styles.card, isConnected && styles.cardConnected]}
+        onPress={handlePress}
+        activeOpacity={0.8}
+      >
+        {/* Accent stripe */}
+        <View style={[styles.accentStripe, { backgroundColor: accentColor }]} />
+
+        <View style={styles.content}>
+          <Text style={styles.emoji}>{emoji}</Text>
+          <View style={styles.info}>
+            <Text style={styles.name}>{service.name}</Text>
+            {description ? <Text style={styles.desc}>{description}</Text> : null}
+          </View>
+          <View style={[styles.statusBadge, isConnected && styles.statusBadgeConnected]}>
+            <Text style={[styles.statusText, isConnected && styles.statusTextConnected]}>
+              {isConnected ? '✓' : '+'}
             </Text>
-          ) : (
-            <Text style={styles.status}>Not connected</Text>
-          )}
+          </View>
         </View>
-        <View style={styles.actions}>
-          {!service.isConnected ? (
-            <TouchableOpacity
-              style={[styles.btn, { backgroundColor: gradColors[0] + '30', borderColor: gradColors[0] }]}
-              onPress={handleConnect}
-              disabled={loading}
-            >
-              {loading ? (
-                <ActivityIndicator size="small" color={gradColors[0]} />
-              ) : (
-                <Text style={[styles.btnText, { color: gradColors[0] }]}>Connect</Text>
-              )}
-            </TouchableOpacity>
-          ) : (
-            <>
-              <TouchableOpacity
-                style={[styles.btnSmall, { backgroundColor: gradColors[0] + '20' }]}
-                onPress={handleSync}
-                disabled={syncing}
-              >
-                {syncing ? (
-                  <ActivityIndicator size="small" color={gradColors[0]} />
-                ) : (
-                  <Text style={[styles.btnTextSmall, { color: gradColors[0] }]}>Sync</Text>
-                )}
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.btnSmall, { backgroundColor: colors.danger + '20' }]}
-                onPress={handleRevoke}
-              >
-                <Text style={[styles.btnTextSmall, { color: colors.danger }]}>Revoke</Text>
-              </TouchableOpacity>
-            </>
-          )}
-        </View>
-      </View>
-    </View>
+      </TouchableOpacity>
+    </Animated.View>
   );
 }
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: colors.surface,
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 12,
+    backgroundColor: colors.glassFill,
+    borderRadius: radii.lg,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.glassStroke,
+    overflow: 'hidden',
   },
-  row: {
+  cardConnected: {
+    borderColor: 'rgba(0, 230, 118, 0.2)',
+  },
+  accentStripe: {
+    height: 3,
+    width: '100%',
+  },
+  content: {
     flexDirection: 'row',
     alignItems: 'center',
+    padding: spacing.md,
+    gap: spacing.md,
   },
-  iconWrap: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
-    backgroundColor: colors.surfaceElevated,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-  },
-  iconText: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: colors.primary,
+  emoji: {
+    fontSize: 28,
   },
   info: {
     flex: 1,
-    marginLeft: 12,
   },
   name: {
-    fontSize: 16,
-    fontWeight: '700',
+    ...typography.bodyMedium,
     color: colors.primary,
   },
-  status: {
-    fontSize: 13,
+  desc: {
+    ...typography.caption,
     color: colors.secondary,
     marginTop: 2,
   },
-  statusConnected: {
-    fontSize: 13,
-    color: colors.success,
-    marginTop: 2,
-  },
-  actions: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  btn: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 8,
+  statusBadge: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    minWidth: 90,
+    borderColor: colors.borderLight,
+    justifyContent: 'center',
     alignItems: 'center',
   },
-  btnText: {
-    fontWeight: '600',
+  statusBadgeConnected: {
+    backgroundColor: 'rgba(0, 230, 118, 0.15)',
+    borderColor: colors.success,
+  },
+  statusText: {
     fontSize: 14,
+    fontWeight: '700',
+    color: colors.tertiary,
   },
-  btnSmall: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 6,
-    minWidth: 60,
-    alignItems: 'center',
-  },
-  btnTextSmall: {
-    fontWeight: '600',
-    fontSize: 12,
+  statusTextConnected: {
+    color: colors.success,
   },
 });

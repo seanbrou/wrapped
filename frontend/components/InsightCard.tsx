@@ -1,41 +1,59 @@
 import React, { useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, Animated } from 'react-native';
-import { colors } from '../lib/theme';
+import { colors, typography, spacing, radii } from '../lib/theme';
 
 interface Props {
-  title: string;
-  text: string;
-  chips?: string[];
+  headline: string;
+  supportingData?: { label: string; value: string }[];
+  service: string;
 }
 
-export function InsightCard({ title, text, chips = [] }: Props) {
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const scaleAnim = useRef(new Animated.Value(0.9)).current;
+export function InsightCard({ headline, supportingData, service }: Props) {
+  const headlineOpacity = useRef(new Animated.Value(0)).current;
+  const headlineY = useRef(new Animated.Value(30)).current;
+  const chipAnims = useRef((supportingData || []).map(() => new Animated.Value(0))).current;
 
   useEffect(() => {
     Animated.parallel([
-      Animated.spring(scaleAnim, { toValue: 1, friction: 6, tension: 80, useNativeDriver: true }),
-      Animated.timing(fadeAnim, { toValue: 1, duration: 600, useNativeDriver: true }),
+      Animated.spring(headlineY, { toValue: 0, damping: 12, stiffness: 60, useNativeDriver: true }),
+      Animated.timing(headlineOpacity, { toValue: 1, duration: 600, useNativeDriver: true }),
     ]).start();
+
+    Animated.stagger(150, chipAnims.map(anim =>
+      Animated.spring(anim, { toValue: 1, damping: 10, stiffness: 80, useNativeDriver: true })
+    )).start();
   }, []);
 
   return (
-    <Animated.View style={[styles.container, {
-      opacity: fadeAnim,
-      transform: [{ scale: scaleAnim }],
-    }]}>
-      <Text style={styles.title}>{title}</Text>
-      <Text style={styles.text}>{text}</Text>
-      {chips.length > 0 && (
+    <View style={styles.container}>
+      <View style={styles.serviceBadge}>
+        <Text style={styles.serviceText}>{service.replace('_', ' ')}</Text>
+      </View>
+
+      <Animated.View style={[styles.headlineArea, { opacity: headlineOpacity, transform: [{ translateY: headlineY }] }]}>
+        <Text style={styles.headline}>"{headline}"</Text>
+      </Animated.View>
+
+      {supportingData && supportingData.length > 0 && (
         <View style={styles.chips}>
-          {chips.map((chip, i) => (
-            <View key={i} style={styles.chip}>
-              <Text style={styles.chipText}>{chip}</Text>
-            </View>
+          {supportingData.map((d, i) => (
+            <Animated.View
+              key={i}
+              style={[
+                styles.chip,
+                {
+                  opacity: chipAnims[i],
+                  transform: [{ scale: chipAnims[i].interpolate({ inputRange: [0, 1], outputRange: [0.8, 1] }) }],
+                },
+              ]}
+            >
+              <Text style={styles.chipLabel}>{d.label}</Text>
+              <Text style={styles.chipValue}>{d.value}</Text>
+            </Animated.View>
           ))}
         </View>
       )}
-    </Animated.View>
+    </View>
   );
 }
 
@@ -44,41 +62,58 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 32,
+    paddingHorizontal: spacing.xl,
+    backgroundColor: colors.background,
   },
-  title: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: colors.accentCyan,
-    textTransform: 'uppercase',
+  serviceBadge: {
+    position: 'absolute',
+    top: 100,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderRadius: radii.full,
+    backgroundColor: colors.glassFill,
+    borderWidth: 1,
+    borderColor: colors.glassStroke,
+  },
+  serviceText: {
+    ...typography.captionUppercase,
+    color: colors.secondary,
     letterSpacing: 2,
-    marginBottom: 16,
   },
-  text: {
-    fontSize: 28,
-    fontWeight: '800',
-    color: colors.primary,
+  headlineArea: {
+    marginBottom: spacing.xl,
+  },
+  headline: {
+    ...typography.h2,
+    color: colors.accentFuchsia,
     textAlign: 'center',
-    lineHeight: 38,
+    fontStyle: 'italic',
+    lineHeight: 34,
   },
   chips: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'center',
-    marginTop: 24,
-    gap: 8,
+    gap: spacing.sm,
   },
   chip: {
-    backgroundColor: colors.surface,
-    borderRadius: 20,
-    paddingHorizontal: 14,
-    paddingVertical: 6,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radii.full,
+    backgroundColor: colors.glassFill,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.glassStroke,
+    alignItems: 'center',
   },
-  chipText: {
-    fontSize: 13,
-    color: colors.secondary,
-    fontWeight: '500',
+  chipLabel: {
+    ...typography.captionUppercase,
+    color: colors.tertiary,
+    fontSize: 9,
+  },
+  chipValue: {
+    ...typography.caption,
+    color: colors.primary,
+    fontWeight: '700',
+    marginTop: 2,
   },
 });

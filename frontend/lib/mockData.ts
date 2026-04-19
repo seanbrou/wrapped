@@ -1,112 +1,196 @@
-import type { WrappedCard } from './api';
+// ═══════════════════════════════════════════════════════════════
+// Mock Data — Richer demo data for the redesigned Wrapped app
+// ═══════════════════════════════════════════════════════════════
 
 export const SERVICE_DETAILS = [
-  { id: 'spotify', name: 'Spotify', color: '#1DB954' },
-  { id: 'apple_health', name: 'Apple Health', color: '#FF6B6B' },
-  { id: 'strava', name: 'Strava', color: '#FC4C02' },
-  { id: 'goodreads', name: 'Goodreads', color: '#663399' },
-  { id: 'steam', name: 'Steam', color: '#1B2838' },
+  { id: 'spotify', name: 'Spotify', emoji: '🎧', description: 'Music, podcasts, listening history', color: '#1DB954', gradient: ['#1DB954', '#1ED760'] as const },
+  { id: 'apple_health', name: 'Apple Health', emoji: '❤️', description: 'Steps, workouts, sleep data', color: '#FF6B6B', gradient: ['#FF6B6B', '#FF8E8E'] as const },
+  { id: 'strava', name: 'Strava', emoji: '🏃', description: 'Runs, rides, activity stats', color: '#FC4C02', gradient: ['#FC4C02', '#FF6B35'] as const },
+  { id: 'goodreads', name: 'Goodreads', emoji: '📚', description: 'Books read, pages, genres', color: '#C8B882', gradient: ['#C8B882', '#F4F1EA'] as const },
+  { id: 'steam', name: 'Steam', emoji: '🎮', description: 'Games played, hours, achievements', color: '#66C0F4', gradient: ['#1B2838', '#66C0F4'] as const },
 ];
 
 export const PERIODS = [
-  { value: 'year', label: 'Year' },
-  { value: '6months', label: '6 Months' },
-  { value: '3months', label: '3 Months' },
-  { value: 'month', label: 'Month' },
+  { label: 'This Year', value: 'year' },
+  { label: 'Last 6 Months', value: '6months' },
+  { label: 'All Time', value: 'all' },
 ];
 
-export const MOCK_INSIGHTS = [
-  'Your 2025 vibe: 60% productivity, 30% chaos, 10% chaotic espresso.',
-  'Spotify knows you better than your therapist — 47,382 minutes of deep cuts.',
-  "You're in the top 5% of readers worldwide. Bibliophile energy.",
-  'Your most chaotic month was March — 47 books and 12 all-nighters.',
-  'Health stats: 4.2M steps, 247 workouts, 0 excuses.',
-  "You outran 94% of Strava users this year. Speed demon energy.",
-];
-
-const makeHeroCard = (id: string, title: string, value: string, subtitle: string, service: string) => ({
-  id,
-  type: 'hero_stat' as const,
-  service,
-  title,
-  data: { value, unit: '', subtitle, emoji: '🎵' },
-});
-
-const makeTopListCard = (id: string, title: string, items: { name: string; count: number }[], service: string) => ({
-  id,
-  type: 'top_list' as const,
-  service,
-  title,
-  data: { items, emoji: '🎵' },
-});
-
-const makeInsightCard = (id: string, title: string, text: string) => ({
-  id,
-  type: 'insight' as const,
-  service: 'spotify',
-  title,
-  data: { text },
-});
-
-const makeChartCard = (id: string, title: string, data: number[], labels: string[], service: string) => ({
-  id,
-  type: 'chart' as const,
-  service,
-  title,
-  data: { chartType: 'area' as const, data, labels, unit: 'min' },
-});
-
-const makeCommunityCard = (id: string, percentile: number, metric: string, value: string) => ({
-  id,
-  type: 'community' as const,
-  service: 'spotify',
-  title: 'You vs Listeners',
-  data: { percentile, metric, value },
-});
-
-const makeComparisonCard = (id: string, title: string, labels: string[], values: number[], unit: string) => ({
-  id,
-  type: 'comparison' as const,
-  service: 'spotify',
-  title,
-  data: { labels, values, unit },
-});
-
-export const MOCK_CARDS: WrappedCard[] = [
-  makeHeroCard('card-1', 'Total Minutes', '42,847', 'More than 29 days of music!', 'spotify'),
-  makeTopListCard('card-2', 'Top Artists', [
-    { name: 'Kendrick Lamar', count: 2847 },
-    { name: 'Tyler, The Creator', count: 2156 },
-    { name: 'Frank Ocean', count: 1923 },
-    { name: 'Playboi Carti', count: 1847 },
-    { name: 'JPEGMAFIA', count: 1654 },
-  ], 'spotify'),
-  makeInsightCard('card-3', "You're in your music era", 'Kendrick on repeat — you really went deep this year.'),
-  makeChartCard('card-4', 'Monthly Listening', [3200, 2800, 3500, 3100, 2900, 3800, 4200, 3900, 3600, 3400, 3100, 3547],
-    ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D'], 'spotify'),
-  makeCommunityCard('card-5', 8, 'Minutes Listened', 'Top 8% of listeners worldwide'),
-  makeComparisonCard('card-6', 'vs Last Year', ['2024', '2025'], [35120, 42847], 'min'),
-  makeHeroCard('card-7', 'Total Steps', '4.2M', "That's 2,053 miles!", 'apple_health'),
-  makeTopListCard('card-8', 'Top Workouts', [
-    { name: 'Running', count: 87 },
-    { name: 'Cycling', count: 65 },
-    { name: 'HIIT', count: 42 },
-    { name: 'Walking', count: 38 },
-    { name: 'Yoga', count: 24 },
-  ], 'apple_health'),
-  makeInsightCard('card-9', 'Fitness Machine', '247 workouts — you did not skip leg day.'),
-  makeChartCard('card-10', 'Activity Trend', [180, 195, 210, 225, 240, 255, 270, 265, 280, 295, 287, 247],
-    ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D'], 'apple_health'),
-  makeCommunityCard('card-11', 5, 'Workouts', 'Top 5% most active users'),
-  makeComparisonCard('card-12', 'vs Last Year', ['2024', '2025'], [198, 247], 'workouts'),
-];
+// ═══════════════════════════════════════════════════════════════
+// Wrapped session mock
+// ═══════════════════════════════════════════════════════════════
 
 export const MOCK_WRAPPED = {
-  id: 'wrapped-2025',
-  sessionId: 'mock-session-2025',
-  year: 2025,
-  services: ['spotify', 'apple_health'],
-  cards: MOCK_CARDS,
-  insights: MOCK_INSIGHTS,
-  createdAt: '2026-04-18T12:00:00Z',
+  id: 'demo-session-2026',
+  cards: [
+    // 1. Hero stat — Spotify minutes
+    {
+      type: 'hero_stat',
+      service: 'spotify',
+      data: {
+        stat: '32,847',
+        value: 'Minutes listened this year',
+        unit: 'minutes',
+        comparison: "That's 2x more than last year 🔥",
+      },
+    },
+    // 2. Top list — top artists
+    {
+      type: 'top_list',
+      service: 'spotify',
+      data: {
+        title: 'Your Top Artists',
+        items: [
+          { rank: 1, name: 'Radiohead', stat: '847 plays', emoji: '🎸' },
+          { rank: 2, name: 'Tyler, the Creator', stat: '623 plays', emoji: '🎤' },
+          { rank: 3, name: 'Tame Impala', stat: '512 plays', emoji: '🌀' },
+          { rank: 4, name: 'King Krule', stat: '401 plays', emoji: '🎵' },
+          { rank: 5, name: 'Frank Ocean', stat: '378 plays', emoji: '🌊' },
+        ],
+      },
+    },
+    // 3. Community card — Spotify percentile
+    {
+      type: 'community',
+      service: 'spotify',
+      data: {
+        percentile: 5,
+        metric: 'listening time',
+        value: '548 hours',
+      },
+    },
+    // 4. Insight card
+    {
+      type: 'insight',
+      service: 'spotify',
+      data: {
+        headline: 'You listened to more jazz this year than the entire population of New Orleans',
+        supportingData: [
+          { label: 'JAZZ HOURS', value: '142' },
+          { label: 'GENRES', value: '23' },
+        ],
+      },
+    },
+    // 5. Chart card — Strava miles
+    {
+      type: 'chart',
+      service: 'strava',
+      data: {
+        title: 'Monthly Running Distance',
+        chartType: 'area',
+        data: [12, 18, 24, 31, 28, 42, 35, 48, 40, 36, 22, 15],
+        labels: ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D'],
+      },
+    },
+    // 6. Hero stat — Strava miles
+    {
+      type: 'hero_stat',
+      service: 'strava',
+      data: {
+        stat: '351',
+        value: 'Miles run this year',
+        unit: 'miles',
+        comparison: 'You ran a marathon every 3 days 🏃',
+      },
+    },
+    // 7. Comparison — This year vs last
+    {
+      type: 'comparison',
+      service: 'strava',
+      data: {
+        title: 'You vs. Last Year',
+        labels: ['This Year', 'Last Year', 'Average'],
+        values: [351, 287, 198],
+        unit: 'mi',
+      },
+    },
+    // 8. Hero stat — Goodreads books
+    {
+      type: 'hero_stat',
+      service: 'goodreads',
+      data: {
+        stat: '47',
+        value: 'Books read this year',
+        unit: 'books',
+        comparison: "That's almost one per week 📖",
+      },
+    },
+    // 9. Top list — top books
+    {
+      type: 'top_list',
+      service: 'goodreads',
+      data: {
+        title: 'Your Top Books',
+        items: [
+          { rank: 1, name: 'The Three-Body Problem', stat: '★★★★★', emoji: '📖' },
+          { rank: 2, name: 'Project Hail Mary', stat: '★★★★★', emoji: '🚀' },
+          { rank: 3, name: 'Tomorrow, and Tomorrow', stat: '★★★★½', emoji: '🎮' },
+          { rank: 4, name: 'Klara and the Sun', stat: '★★★★', emoji: '☀️' },
+          { rank: 5, name: 'Piranesi', stat: '★★★★', emoji: '🏛️' },
+        ],
+      },
+    },
+    // 10. Community — Goodreads percentile
+    {
+      type: 'community',
+      service: 'goodreads',
+      data: {
+        percentile: 2,
+        metric: 'books read',
+        value: '47 books',
+      },
+    },
+    // 11. Insight — Steam
+    {
+      type: 'insight',
+      service: 'steam',
+      data: {
+        headline: 'You spent more time in Elden Ring than most people spend commuting',
+        supportingData: [
+          { label: 'HOURS', value: '234' },
+          { label: 'DEATHS', value: '1,847' },
+        ],
+      },
+    },
+    // 12. Chart — Steam hours
+    {
+      type: 'chart',
+      service: 'steam',
+      data: {
+        title: 'Top Games by Hours',
+        chartType: 'bar',
+        data: [234, 142, 89, 76, 52],
+        labels: ['Elden Ring', 'Baldurs Gate', 'Cyberpunk', 'Hades', 'Celeste'],
+      },
+    },
+    // 13. Hero stat — Apple Health steps
+    {
+      type: 'hero_stat',
+      service: 'apple_health',
+      data: {
+        stat: '2.4M',
+        value: 'Steps taken this year',
+        unit: 'steps',
+        comparison: "That's walking from NYC to LA 🔥",
+      },
+    },
+    // 14. Community — Apple Health
+    {
+      type: 'community',
+      service: 'apple_health',
+      data: {
+        percentile: 8,
+        metric: 'daily activity',
+        value: '87 avg min/day',
+      },
+    },
+    // 15. Share card
+    {
+      type: 'share',
+      service: 'spotify',
+      data: {
+        stat: '32,847 minutes of music, 351 miles run, 47 books read',
+      },
+    },
+  ],
 };

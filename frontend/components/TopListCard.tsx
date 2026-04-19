@@ -1,58 +1,63 @@
 import React, { useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, Animated } from 'react-native';
-import { colors, gradients } from '../lib/theme';
-import { formatNumber } from '../lib/theme';
-
-interface TopItem {
-  name: string;
-  count: number;
-  rank?: number;
-}
+import { colors, typography, spacing, radii } from '../lib/theme';
 
 interface Props {
-  items: TopItem[];
-  title?: string;
+  title: string;
+  items: { rank: number; name: string; stat: string; emoji?: string }[];
+  service: string;
 }
 
-function TopItemRow({ item, index }: { item: TopItem; index: number }) {
-  const opacityAnim = useRef(new Animated.Value(0)).current;
-  const translateX = useRef(new Animated.Value(-20)).current;
+const RANK_COLORS = ['#FFD700', '#C0C0C0', '#CD7F32']; // gold, silver, bronze
+
+export function TopListCard({ title, items, service }: Props) {
+  const titleOpacity = useRef(new Animated.Value(0)).current;
+  const itemAnims = useRef(items.map(() => new Animated.Value(0))).current;
 
   useEffect(() => {
-    Animated.sequence([
-      Animated.delay(index * 120),
-      Animated.parallel([
-        Animated.timing(opacityAnim, { toValue: 1, duration: 400, useNativeDriver: true }),
-        Animated.spring(translateX, { toValue: 0, friction: 8, tension: 60, useNativeDriver: true }),
-      ]),
+    Animated.stagger(120, [
+      Animated.timing(titleOpacity, { toValue: 1, duration: 400, useNativeDriver: true }),
+      ...itemAnims.map(anim =>
+        Animated.spring(anim, { toValue: 1, damping: 10, stiffness: 80, useNativeDriver: true })
+      ),
     ]).start();
   }, []);
 
-  const isTop3 = index < 3;
-
-  return (
-    <Animated.View style={[styles.row, {
-      opacity: opacityAnim,
-      transform: [{ translateX }],
-    }]}>
-      <View style={[styles.rankBadge, isTop3 && styles.rankBadgeTop]}>
-        <Text style={[styles.rankText, isTop3 && styles.rankTextTop]}>{index + 1}</Text>
-      </View>
-      <Text style={styles.itemName} numberOfLines={1}>{item.name}</Text>
-      {item.count > 0 && (
-        <Text style={styles.itemCount}>{formatNumber(item.count)}</Text>
-      )}
-    </Animated.View>
-  );
-}
-
-export function TopListCard({ items, title }: Props) {
   return (
     <View style={styles.container}>
-      {title && <Text style={styles.title}>{title}</Text>}
+      <View style={styles.serviceBadge}>
+        <Text style={styles.serviceText}>{service.replace('_', ' ')}</Text>
+      </View>
+
+      <Animated.View style={{ opacity: titleOpacity }}>
+        <Text style={styles.title}>{title}</Text>
+      </Animated.View>
+
       <View style={styles.list}>
         {items.map((item, i) => (
-          <TopItemRow key={i} item={item} index={i} />
+          <Animated.View
+            key={i}
+            style={[
+              styles.itemRow,
+              {
+                opacity: itemAnims[i],
+                transform: [
+                  { translateX: itemAnims[i].interpolate({ inputRange: [0, 1], outputRange: [30, 0] }) },
+                ],
+              },
+            ]}
+          >
+            <View style={[
+              styles.rankCircle,
+              i < 3 && { backgroundColor: RANK_COLORS[i] + '20', borderColor: RANK_COLORS[i] },
+            ]}>
+              <Text style={[styles.rankText, i < 3 && { color: RANK_COLORS[i] }]}>{item.rank}</Text>
+            </View>
+            <View style={styles.itemContent}>
+              <Text style={styles.itemName}>{item.emoji ? `${item.emoji} ` : ''}{item.name}</Text>
+              <Text style={styles.itemStat}>{item.stat}</Text>
+            </View>
+          </Animated.View>
         ))}
       </View>
     </View>
@@ -62,58 +67,75 @@ export function TopListCard({ items, title }: Props) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 24,
-    paddingTop: 48,
+    justifyContent: 'center',
+    paddingHorizontal: spacing.xl,
+    backgroundColor: colors.background,
+  },
+  serviceBadge: {
+    position: 'absolute',
+    top: 100,
+    alignSelf: 'center',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderRadius: radii.full,
+    backgroundColor: colors.glassFill,
+    borderWidth: 1,
+    borderColor: colors.glassStroke,
+  },
+  serviceText: {
+    ...typography.captionUppercase,
+    color: colors.secondary,
+    letterSpacing: 2,
   },
   title: {
-    fontSize: 28,
-    fontWeight: '800',
-    color: colors.primary,
-    marginBottom: 24,
+    ...typography.h2,
+    color: colors.accentCyan,
+    textAlign: 'center',
+    marginBottom: spacing.xl,
   },
   list: {
-    gap: 12,
+    gap: spacing.md,
   },
-  row: {
+  itemRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderRadius: 12,
-    padding: 14,
+    gap: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+    backgroundColor: colors.glassFill,
+    borderRadius: radii.md,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.glassStroke,
   },
-  rankBadge: {
+  rankCircle: {
     width: 32,
     height: 32,
-    borderRadius: 8,
-    backgroundColor: colors.surfaceElevated,
+    borderRadius: 16,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 14,
-  },
-  rankBadgeTop: {
-    backgroundColor: colors.accentPurple + '30',
-    borderWidth: 1,
-    borderColor: colors.accentPurple,
   },
   rankText: {
-    fontSize: 14,
-    fontWeight: '700',
+    ...typography.caption,
+    fontWeight: '800',
     color: colors.secondary,
   },
-  rankTextTop: {
-    color: colors.accentPurple,
+  itemContent: {
+    flex: 1,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
   itemName: {
-    flex: 1,
-    fontSize: 16,
-    fontWeight: '600',
+    ...typography.bodyMedium,
     color: colors.primary,
+    flex: 1,
   },
-  itemCount: {
-    fontSize: 14,
+  itemStat: {
+    ...typography.caption,
+    color: colors.accentCyan,
     fontWeight: '600',
-    color: colors.secondary,
   },
 });

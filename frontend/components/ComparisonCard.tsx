@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, Animated } from 'react-native';
-import { colors } from '../lib/theme';
+import { colors, typography, spacing, radii } from '../lib/theme';
 
 interface Props {
   labels: string[];
@@ -9,58 +9,50 @@ interface Props {
   title?: string;
 }
 
+const BAR_COLORS = ['#7C4DFF', '#E040FB', '#00F5FF', '#FFD700', '#00E676'];
+
 export function ComparisonCard({ labels, values, unit, title }: Props) {
   const maxVal = Math.max(...values);
-  const bars = labels.map((label, i) => ({
-    label,
-    value: values[i],
-    width: (values[i] / maxVal) * 100,
-  }));
+  const barAnims = useRef(labels.map(() => new Animated.Value(0))).current;
+  const fadeAnims = useRef(labels.map(() => new Animated.Value(0))).current;
+
+  useEffect(() => {
+    Animated.stagger(200, barAnims.map((bar, i) =>
+      Animated.parallel([
+        Animated.spring(bar, { toValue: 1, damping: 12, stiffness: 60, useNativeDriver: false }),
+        Animated.timing(fadeAnims[i], { toValue: 1, duration: 400, useNativeDriver: true }),
+      ])
+    )).start();
+  }, []);
 
   return (
     <View style={styles.container}>
       {title && <Text style={styles.title}>{title}</Text>}
+
       <View style={styles.bars}>
-        {bars.map((bar, i) => (
-          <ComparisonBar key={i} label={bar.label} width={bar.width} value={bar.value} unit={unit || ''} index={i} />
-        ))}
+        {labels.map((label, i) => {
+          const pct = maxVal > 0 ? (values[i] / maxVal) * 100 : 0;
+          return (
+            <Animated.View key={i} style={[styles.barRow, { opacity: fadeAnims[i] }]}>
+              <Text style={styles.barLabel}>{label}</Text>
+              <View style={styles.barTrack}>
+                <Animated.View style={[
+                  styles.barFill,
+                  {
+                    backgroundColor: BAR_COLORS[i % BAR_COLORS.length],
+                    width: barAnims[i].interpolate({
+                      inputRange: [0, 1],
+                      outputRange: ['0%', `${pct}%`],
+                    }) as any,
+                  },
+                ]} />
+              </View>
+              <Text style={styles.barValue}>{values[i].toLocaleString()}{unit ? ` ${unit}` : ''}</Text>
+            </Animated.View>
+          );
+        })}
       </View>
     </View>
-  );
-}
-
-function ComparisonBar({ label, width, value, unit, index }: {
-  label: string; width: number; value: number; unit: string; index: number;
-}) {
-  const animW = useRef(new Animated.Value(0)).current;
-  const opacityAnim = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    Animated.sequence([
-      Animated.delay(index * 200),
-      Animated.parallel([
-        Animated.timing(animW, { toValue: width, duration: 1000, useNativeDriver: false }),
-        Animated.timing(opacityAnim, { toValue: 1, duration: 400, useNativeDriver: true }),
-      ]),
-    ]).start();
-  }, []);
-
-  const isFirst = index === 0;
-
-  return (
-    <Animated.View style={[styles.barRow, { opacity: opacityAnim }]}>
-      <Text style={styles.barLabel}>{label}</Text>
-      <View style={styles.barTrack}>
-        <Animated.View style={[styles.barFill, {
-          width: animW.interpolate({
-            inputRange: [0, 100],
-            outputRange: ['0%', '100%'],
-          }) as any,
-          backgroundColor: isFirst ? colors.secondary : colors.accentPurple,
-        }]} />
-      </View>
-      <Text style={styles.barValue}>{value.toLocaleString()} {unit}</Text>
-    </Animated.View>
   );
 }
 
@@ -68,42 +60,40 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     justifyContent: 'center',
-    padding: 32,
+    paddingHorizontal: spacing.xl,
+    backgroundColor: colors.background,
   },
   title: {
-    fontSize: 22,
-    fontWeight: '800',
+    ...typography.h2,
     color: colors.primary,
-    marginBottom: 32,
     textAlign: 'center',
+    marginBottom: spacing.xl,
   },
   bars: {
-    gap: 20,
+    gap: spacing.lg,
   },
   barRow: {
-    gap: 8,
+    gap: spacing.xs,
   },
   barLabel: {
-    fontSize: 13,
-    fontWeight: '600',
+    ...typography.captionUppercase,
     color: colors.secondary,
-    textTransform: 'uppercase',
     letterSpacing: 1,
   },
   barTrack: {
-    height: 12,
+    height: 14,
     backgroundColor: colors.surface,
-    borderRadius: 6,
+    borderRadius: 7,
     overflow: 'hidden',
   },
   barFill: {
     height: '100%',
-    borderRadius: 6,
+    borderRadius: 7,
   },
   barValue: {
-    fontSize: 15,
-    fontWeight: '700',
+    ...typography.caption,
     color: colors.primary,
-    marginTop: 4,
+    fontWeight: '700',
+    marginTop: 2,
   },
 });

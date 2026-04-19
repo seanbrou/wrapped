@@ -1,6 +1,16 @@
 import { Tabs } from 'expo-router';
 import { View, Text, StyleSheet } from 'react-native';
-import { colors } from '../../lib/theme';
+import { colors, typography, spacing, radii } from '../../lib/theme';
+
+function TabIcon({ emoji, focused }: { emoji: string; focused: boolean }) {
+  return (
+    <View style={[styles.tabIcon, focused && styles.tabIconActive]}>
+      <Text style={[styles.tabEmoji, focused && styles.tabEmojiActive]}>
+        {emoji}
+      </Text>
+    </View>
+  );
+}
 
 export default function TabsLayout() {
   return (
@@ -11,36 +21,55 @@ export default function TabsLayout() {
           backgroundColor: colors.surface,
           borderTopColor: colors.border,
           borderTopWidth: 1,
-          height: 60,
-          paddingBottom: 8,
-          paddingTop: 8,
+          height: 72,
+          paddingBottom: 20,
+          paddingTop: 10,
+          paddingHorizontal: 8,
         },
-        tabBarActiveTintColor: colors.accentPurple,
-        tabBarInactiveTintColor: colors.secondary,
+        tabBarActiveTintColor: colors.accentFuchsia,
+        tabBarInactiveTintColor: colors.tertiary,
         tabBarLabelStyle: {
-          fontSize: 12,
-          fontWeight: '600',
+          ...typography.caption,
+          letterSpacing: 1,
+          marginTop: 2,
         },
       }}
     >
       <Tabs.Screen
         name="services"
         options={{
-          title: 'Connect',
-          tabBarIcon: ({ color }) => (
-            <Text style={{ fontSize: 20, color }}>🔗</Text>
-          ),
+          title: 'CONNECT',
+          tabBarIcon: ({ focused }) => <TabIcon emoji="⚡" focused={focused} />,
         }}
       />
       <Tabs.Screen
         name="dashboard"
         options={{
-          title: 'My Wrapped',
-          tabBarIcon: ({ color }) => (
-            <Text style={{ fontSize: 20, color }}>✨</Text>
-          ),
+          title: 'WRAPPED',
+          tabBarIcon: ({ focused }) => <TabIcon emoji="🎁" focused={focused} />,
         }}
       />
     </Tabs>
   );
 }
+
+const styles = StyleSheet.create({
+  tabIcon: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    backgroundColor: 'transparent',
+  },
+  tabIconActive: {
+    backgroundColor: 'rgba(224, 64, 251, 0.15)',
+  },
+  tabEmoji: {
+    fontSize: 18,
+    opacity: 0.4,
+  },
+  tabEmojiActive: {
+    opacity: 1,
+  },
+});

@@ -6,14 +6,23 @@ import {
   ScrollView,
   TouchableOpacity,
   RefreshControl,
+  Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
-import { colors } from '../../lib/theme';
+import { colors, typography, spacing, radii, shadows, gradients } from '../../lib/theme';
 import { api, ServiceInfo } from '../../lib/api';
 import { MOCK_WRAPPED, SERVICE_DETAILS, PERIODS } from '../../lib/mockData';
 import { LoadingRing } from '../../components/LoadingRing';
+
+const SERVICES_META: Record<string, { emoji: string; color: string }> = {
+  spotify: { emoji: '🎧', color: '#1DB954' },
+  apple_health: { emoji: '❤️', color: '#FF6B6B' },
+  strava: { emoji: '🏃', color: '#FC4C02' },
+  goodreads: { emoji: '📚', color: '#C8B882' },
+  steam: { emoji: '🎮', color: '#66C0F4' },
+};
 
 export default function DashboardScreen() {
   const router = useRouter();
@@ -24,22 +33,33 @@ export default function DashboardScreen() {
   const [generating, setGenerating] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
+  const btnScale = React.useRef(new Animated.Value(1)).current;
+  const glowAnim = React.useRef(new Animated.Value(0)).current;
+  const shimmerPos = React.useRef(new Animated.Value(0)).current;
+
   React.useEffect(() => {
+    // Glow pulse animation
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(glowAnim, { toValue: 1, duration: 1500, useNativeDriver: true }),
+        Animated.timing(glowAnim, { toValue: 0.4, duration: 1500, useNativeDriver: true }),
+      ])
+    ).start();
+
+    // Shimmer
+    Animated.loop(
+      Animated.timing(shimmerPos, { toValue: 1, duration: 2000, useNativeDriver: true })
+    ).start();
+
     api.listServices()
       .then(data => {
         setServices(data);
         setSelectedServices(data.filter((s: ServiceInfo) => s.isConnected).map((s: ServiceInfo) => s.id));
       })
       .catch(() => {
-        setServices(
-          SERVICE_DETAILS.map(s => ({
-            id: s.id,
-            name: s.name,
-            logoUrl: '',
-            isConnected: true,
-            lastSyncedAt: new Date().toISOString(),
-          }))
-        );
+        setServices(SERVICE_DETAILS.map(s => ({
+          id: s.id, name: s.name, logoUrl: '', isConnected: true, lastSyncedAt: new Date().toISOString(),
+        })));
       })
       .finally(() => setLoading(false));
   }, []);
@@ -64,111 +84,142 @@ export default function DashboardScreen() {
   async function handleGenerate() {
     if (selectedServices.length === 0) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+
+    // Press animation
+    Animated.sequence([
+      Animated.spring(btnScale, { toValue: 0.95, useNativeDriver: true }),
+      Animated.spring(btnScale, { toValue: 1, useNativeDriver: true }),
+    ]).start();
+
     setGenerating(true);
     try {
       const result = await api.generateWrapped(selectedServices);
       router.push(`/wrapped/${result.sessionId}`);
     } catch {
-      // Use mock data for demo
       router.push(`/wrapped/${MOCK_WRAPPED.id}`);
     }
   }
 
   const connectedServices = services.filter(s => s.isConnected);
+  const disabled = selectedServices.length === 0 || generating;
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <View style={styles.header}>
-        <Text style={styles.title}>My Wrapped</Text>
-        <Text style={styles.subtitle}>Select services and generate your recap</Text>
-      </View>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accentFuchsia} />}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Hero header */}
+        <View style={styles.hero}>
+          <Text style={styles.heroTitle}>My Wrapped</Text>
+          <View style={styles.heroUnderline} />
+          <Text style={styles.heroSubtitle}>Select services and unwrap your year</Text>
+        </View>
 
-      {loading ? (
-        <LoadingRing />
-      ) : (
-        <ScrollView
-          style={styles.scroll}
-          contentContainerStyle={styles.scrollContent}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accentPurple} />}
-        >
-          {/* Connected Services */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Your Services</Text>
+        {loading ? (
+          <LoadingRing />
+        ) : (
+          <>
             {connectedServices.length === 0 ? (
               <View style={styles.emptyState}>
-                <Text style={styles.emptyText}>No services connected yet.</Text>
-                <TouchableOpacity onPress={() => router.replace('/(tabs)/services')}>
-                  <Text style={styles.linkText}>Go connect some →</Text>
+                <Text style={styles.emptyEmoji}>🔗</Text>
+                <Text style={styles.emptyText}>No services connected yet</Text>
+                <TouchableOpacity onPress={() => router.push('/(tabs)/services')}>
+                  <Text style={styles.emptyLink}>Connect services →</Text>
                 </TouchableOpacity>
               </View>
             ) : (
-              <View style={styles.serviceGrid}>
-                {services.map(s => {
-                  if (!s.isConnected) return null;
-                  const detail = SERVICE_DETAILS.find(d => d.id === s.id);
-                  return (
-                    <TouchableOpacity
-                      key={s.id}
-                      style={[
-                        styles.servicePill,
-                        selectedServices.includes(s.id) && styles.servicePillActive,
-                      ]}
-                      onPress={() => toggleService(s.id)}
-                      activeOpacity={0.7}
-                    >
-                      <View style={[styles.serviceDot, { backgroundColor: detail?.color || colors.accentPurple }]} />
-                      <Text style={[styles.servicePillText, selectedServices.includes(s.id) && styles.servicePillTextActive]}>
-                        {s.name}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
+              <>
+                {/* Service pills */}
+                <View style={styles.section}>
+                  <Text style={styles.sectionLabel}>YOUR SERVICES</Text>
+                  <View style={styles.pillRow}>
+                    {connectedServices.map(s => {
+                      const meta = SERVICES_META[s.id] || { emoji: '📦', color: colors.accentFuchsia };
+                      const isSelected = selectedServices.includes(s.id);
+                      return (
+                        <TouchableOpacity
+                          key={s.id}
+                          style={[
+                            styles.pill,
+                            isSelected && { ...styles.pillSelected, shadowColor: meta.color },
+                          ]}
+                          onPress={() => toggleService(s.id)}
+                          activeOpacity={0.7}
+                        >
+                          <Text style={styles.pillEmoji}>{meta.emoji}</Text>
+                          <Text style={[styles.pillText, isSelected && styles.pillTextSelected]}>
+                            {s.name}
+                          </Text>
+                          {isSelected && <Text style={styles.pillCheck}> ✓</Text>}
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+
+                {/* Period selector */}
+                <View style={styles.section}>
+                  <Text style={styles.sectionLabel}>TIME PERIOD</Text>
+                  <View style={styles.periodRow}>
+                    {PERIODS.map(p => {
+                      const active = period === p.value;
+                      return (
+                        <TouchableOpacity
+                          key={p.value}
+                          style={[styles.periodBtn, active && styles.periodBtnActive]}
+                          onPress={() => { setPeriod(p.value); Haptics.selectionAsync(); }}
+                          activeOpacity={0.7}
+                        >
+                          <Text style={[styles.periodBtnText, active && styles.periodBtnTextActive]}>
+                            {p.label}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+
+                {/* Preview estimate */}
+                {selectedServices.length > 0 && (
+                  <View style={styles.previewCard}>
+                    <Text style={styles.previewEmoji}>✨</Text>
+                    <Text style={styles.previewText}>
+                      ~{selectedServices.length * 3} cards from {selectedServices.length} service{selectedServices.length > 1 ? 's' : ''}
+                    </Text>
+                  </View>
+                )}
+              </>
             )}
-          </View>
+          </>
+        )}
+      </ScrollView>
 
-          {/* Period Selector */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Time Period</Text>
-            <View style={styles.periodRow}>
-              {PERIODS.map(p => (
-                <TouchableOpacity
-                  key={p.value}
-                  style={[styles.periodBtn, period === p.value && styles.periodBtnActive]}
-                  onPress={() => setPeriod(p.value)}
-                >
-                  <Text style={[styles.periodBtnText, period === p.value && styles.periodBtnTextActive]}>
-                    {p.label}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
-
-          {/* Preview card count */}
-          {selectedServices.length > 0 && (
-            <View style={styles.previewCard}>
-              <Text style={styles.previewText}>
-                ✨ Your recap will have ~{selectedServices.length * 3} cards
+      {/* Generate button — fixed at bottom */}
+      {!loading && connectedServices.length > 0 && (
+        <View style={styles.footer}>
+          <Animated.View style={{ transform: [{ scale: btnScale }] }}>
+            <TouchableOpacity
+              style={[
+                styles.generateBtn,
+                disabled && styles.generateBtnDisabled,
+              ]}
+              onPress={handleGenerate}
+              disabled={disabled}
+              activeOpacity={0.9}
+            >
+              <Animated.View style={[StyleSheet.absoluteFill, { opacity: disabled ? 0 : glowAnim.interpolate({ inputRange: [0, 1], outputRange: [0.15, 0.4] }) }]}>
+                <View style={styles.generateBtnGlow} />
+              </Animated.View>
+              <Text style={styles.generateBtnText}>
+                {generating ? 'Creating your story...' : 'Unwrap Your Year'}
               </Text>
-            </View>
-          )}
-        </ScrollView>
+            </TouchableOpacity>
+          </Animated.View>
+        </View>
       )}
-
-      {/* Generate Button */}
-      <View style={styles.footer}>
-        <TouchableOpacity
-          style={[styles.generateBtn, selectedServices.length === 0 && styles.generateBtnDisabled]}
-          onPress={handleGenerate}
-          disabled={selectedServices.length === 0 || generating}
-          activeOpacity={0.8}
-        >
-          <Text style={styles.generateBtnText}>
-            {generating ? 'Generating...' : 'Generate My Wrapped'}
-          </Text>
-        </TouchableOpacity>
-      </View>
     </SafeAreaView>
   );
 }
@@ -178,141 +229,187 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
-  header: {
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 8,
-  },
-  title: {
-    fontSize: 32,
-    fontWeight: '900',
-    color: colors.primary,
-  },
-  subtitle: {
-    fontSize: 15,
-    color: colors.secondary,
-    marginTop: 4,
-  },
   scroll: {
     flex: 1,
   },
   scrollContent: {
-    padding: 20,
-    gap: 24,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.lg,
+    paddingBottom: 120,
+  },
+  hero: {
+    marginBottom: spacing.xl,
+  },
+  heroTitle: {
+    ...typography.display,
+    color: colors.primary,
+    fontSize: 48,
+    lineHeight: 52,
+  },
+  heroUnderline: {
+    width: 48,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.accentFuchsia,
+    marginTop: spacing.sm,
+    shadowColor: colors.accentFuchsia,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.6,
+    shadowRadius: 8,
+  },
+  heroSubtitle: {
+    ...typography.body,
+    color: colors.secondary,
+    marginTop: spacing.sm,
   },
   section: {
-    gap: 12,
+    marginBottom: spacing.xl,
   },
-  sectionTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: colors.secondary,
-    textTransform: 'uppercase',
-    letterSpacing: 1.5,
+  sectionLabel: {
+    ...typography.captionUppercase,
+    color: colors.tertiary,
+    marginBottom: spacing.md,
   },
-  serviceGrid: {
+  pillRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
+    gap: spacing.sm,
   },
-  servicePill: {
+  pill: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderRadius: 20,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm + 2,
+    borderRadius: radii.full,
+    backgroundColor: colors.glassFill,
     borderWidth: 1,
-    borderColor: colors.border,
-    gap: 6,
+    borderColor: colors.glassStroke,
+    gap: spacing.xs,
   },
-  servicePillActive: {
-    backgroundColor: colors.accentPurple + '25',
-    borderColor: colors.accentPurple,
+  pillSelected: {
+    backgroundColor: 'rgba(224, 64, 251, 0.1)',
+    borderColor: 'rgba(224, 64, 251, 0.4)',
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 4,
   },
-  serviceDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+  pillEmoji: {
+    fontSize: 16,
   },
-  servicePillText: {
-    fontSize: 14,
-    fontWeight: '500',
+  pillText: {
+    ...typography.caption,
     color: colors.secondary,
   },
-  servicePillTextActive: {
+  pillTextSelected: {
     color: colors.primary,
     fontWeight: '600',
   },
+  pillCheck: {
+    color: colors.accentFuchsia,
+    fontSize: 12,
+    fontWeight: '700',
+  },
   periodRow: {
     flexDirection: 'row',
-    gap: 8,
+    gap: spacing.sm,
   },
   periodBtn: {
-    flex: 1,
-    backgroundColor: colors.surface,
-    borderRadius: 10,
-    paddingVertical: 10,
-    alignItems: 'center',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm + 2,
+    borderRadius: radii.full,
+    backgroundColor: colors.glassFill,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.glassStroke,
   },
   periodBtnActive: {
-    backgroundColor: colors.accentPurple + '20',
-    borderColor: colors.accentPurple,
+    backgroundColor: 'rgba(224, 64, 251, 0.15)',
+    borderColor: colors.accentFuchsia,
   },
   periodBtnText: {
-    fontSize: 12,
-    fontWeight: '600',
+    ...typography.caption,
     color: colors.secondary,
   },
   periodBtnTextActive: {
-    color: colors.accentPurple,
+    color: colors.accentFuchsia,
+    fontWeight: '700',
   },
   previewCard: {
-    backgroundColor: colors.surface,
-    borderRadius: 12,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: colors.border,
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.glassFill,
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    borderColor: colors.glassStroke,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+  },
+  previewEmoji: {
+    fontSize: 20,
   },
   previewText: {
-    fontSize: 14,
+    ...typography.bodyMedium,
     color: colors.secondary,
   },
   emptyState: {
     alignItems: 'center',
-    padding: 24,
-    gap: 8,
+    paddingVertical: spacing.xxxl,
+  },
+  emptyEmoji: {
+    fontSize: 48,
+    marginBottom: spacing.md,
   },
   emptyText: {
-    fontSize: 15,
+    ...typography.body,
     color: colors.secondary,
+    marginBottom: spacing.md,
   },
-  linkText: {
-    fontSize: 15,
-    color: colors.accentPurple,
-    fontWeight: '600',
+  emptyLink: {
+    ...typography.bodyMedium,
+    color: colors.accentFuchsia,
   },
   footer: {
-    padding: 20,
-    paddingBottom: 24,
-    borderTopWidth: 1,
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.xl,
+    paddingTop: spacing.md,
+    backgroundColor: colors.background,
     borderTopColor: colors.border,
+    borderTopWidth: 1,
   },
   generateBtn: {
-    backgroundColor: colors.accentPurple,
-    borderRadius: 16,
+    backgroundColor: colors.accentFuchsia,
     paddingVertical: 18,
+    borderRadius: radii.full,
     alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+    shadowColor: colors.accentFuchsia,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.5,
+    shadowRadius: 16,
   },
   generateBtnDisabled: {
-    backgroundColor: colors.muted,
+    backgroundColor: colors.surface,
+    shadowOpacity: 0,
+    shadowRadius: 0,
+  },
+  generateBtnGlow: {
+    position: 'absolute',
+    top: -20,
+    left: -20,
+    right: -20,
+    bottom: -20,
+    borderRadius: 60,
+    backgroundColor: colors.accentFuchsia,
   },
   generateBtnText: {
-    fontSize: 17,
-    fontWeight: '800',
+    ...typography.h3,
     color: '#fff',
+    fontWeight: '800',
+    letterSpacing: 0.5,
   },
 });

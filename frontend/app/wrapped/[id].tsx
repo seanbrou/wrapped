@@ -1,304 +1,175 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   Dimensions,
-  TouchableOpacity,
   TouchableWithoutFeedback,
-  Animated,
   PanResponder,
-  StatusBar,
+  Animated,
 } from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import * as Haptics from 'expo-haptics';
-import { colors } from '../../lib/theme';
-import { api, WrappedCard } from '../../lib/api';
+import { colors, typography, spacing, radii, animation } from '../../lib/theme';
 import { MOCK_WRAPPED } from '../../lib/mockData';
+import {
+  HeroStatCard,
+  TopListCard,
+  InsightCard,
+  ChartCard,
+  CommunityCard,
+  ComparisonCard,
+  ShareCard,
+} from '../../components';
 import { ProgressDots } from '../../components/ProgressDots';
-import { HeroStatCard } from '../../components/HeroStatCard';
-import { TopListCard } from '../../components/TopListCard';
-import { InsightCard } from '../../components/InsightCard';
-import { ChartCard } from '../../components/ChartCard';
-import { CommunityCard } from '../../components/CommunityCard';
-import { ComparisonCard } from '../../components/ComparisonCard';
-import { ShareCard } from '../../components/ShareCard';
-import { LoadingRing } from '../../components/LoadingRing';
 
-const { height: SCREEN_H } = Dimensions.get('window');
-const CARD_H = SCREEN_H;
-const SWIPE_THRESHOLD = 80;
+const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
+const SWIPE_THRESHOLD = 50;
+const AUTO_ADVANCE_MS = 7000;
+
+// Map card type to component
+const CARD_COMPONENTS: Record<string, React.ComponentType<any>> = {
+  hero_stat: HeroStatCard,
+  top_list: TopListCard,
+  insight: InsightCard,
+  chart: ChartCard,
+  community: CommunityCard,
+  comparison: ComparisonCard,
+  share: ShareCard,
+};
 
 export default function WrappedPlayer() {
-  const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
-  const [cards, setCards] = useState<WrappedCard[]>([]);
-  const [insights, setInsights] = useState<string[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [paused, setPaused] = useState(false);
+  const { id } = useLocalSearchParams<{ id: string }>();
+  const [currentCard, setCurrentCard] = useState(0);
+  const [cardHeight, setCardHeight] = useState(SCREEN_H);
 
-  const translateY = useRef(new Animated.Value(0)).current;
-  const autoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const isVerticalDrag = useRef(false);
+  // Animation values
+  const cardOpacity = useRef(new Animated.Value(1)).current;
+  const cardScale = useRef(new Animated.Value(1)).current;
+  const cardTranslateY = useRef(new Animated.Value(0)).current;
+  const autoAdvanceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const interactionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  useEffect(() => {
-    async function load() {
-      try {
-        const data = await api.getWrapped(id || 'mock-2025');
-        setCards(data.cards);
-        setInsights(data.insights);
-      } catch {
-        // Fall back to mock
-        setCards(MOCK_WRAPPED.cards);
-        setInsights(MOCK_WRAPPED.insights);
-      } finally {
-        setLoading(false);
-      }
-    }
-    load();
-  }, [id]);
+  const cards = MOCK_WRAPPED.cards; // Always use mock for now
 
-  const goToCard = useCallback((index: number) => {
-    if (index < 0 || index >= cards.length) {
-      if (index >= cards.length) {
-        router.replace('/wrapped/end');
+  // Reset auto-advance on interaction
+  function resetAutoAdvance() {
+    if (autoAdvanceTimer.current) clearTimeout(autoAdvanceTimer.current);
+    autoAdvanceTimer.current = setTimeout(() => {
+      advanceCard(1);
+    }, AUTO_ADVANCE_MS);
+  }
+
+  // Animate card transition
+  function advanceCard(direction: 1 | -1) {
+    const nextIndex = currentCard + direction;
+    if (nextIndex < 0 || nextIndex >= cards.length) {
+      if (nextIndex >= cards.length) {
+        // Go to end screen
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        router.push('/wrapped/end');
+        return;
       }
       return;
     }
-    setCurrentIndex(index);
+
     Haptics.selectionAsync();
-  }, [cards.length, router]);
 
-  const resetAutoTimer = useCallback(() => {
-    if (autoTimer.current) clearTimeout(autoTimer.current);
-    if (!paused && cards.length > 0) {
-      autoTimer.current = setTimeout(() => {
-        goToCard(currentIndex + 1);
-      }, 5000);
-    }
-  }, [paused, cards.length, currentIndex, goToCard]);
+    // Out animation
+    Animated.parallel([
+      Animated.timing(cardOpacity, { toValue: 0, duration: 200, useNativeDriver: true }),
+      Animated.timing(cardScale, { toValue: 0.95, duration: 200, useNativeDriver: true }),
+      Animated.timing(cardTranslateY, {
+        toValue: direction > 0 ? -40 : 40,
+        duration: 200,
+        useNativeDriver: true,
+      }),
+    ]).start(() => {
+      setCurrentCard(nextIndex);
+      // Reset for in animation
+      cardOpacity.setValue(0);
+      cardScale.setValue(0.95);
+      cardTranslateY.setValue(direction > 0 ? 40 : -40);
 
-  useEffect(() => {
-    resetAutoTimer();
-    return () => {
-      if (autoTimer.current) clearTimeout(autoTimer.current);
-    };
-  }, [currentIndex, paused]);
+      Animated.parallel([
+        Animated.spring(cardOpacity, { toValue: 1, damping: 15, stiffness: 80, useNativeDriver: true }),
+        Animated.spring(cardScale, { toValue: 1, damping: 12, stiffness: 90, useNativeDriver: true }),
+        Animated.spring(cardTranslateY, { toValue: 0, damping: 15, stiffness: 80, useNativeDriver: true }),
+      ]).start();
+    });
 
+    resetAutoAdvance();
+  }
+
+  // Pan responder for vertical swipe
   const panResponder = useRef(
     PanResponder.create({
-      onStartShouldSetPanResponder: () => false,
-      onMoveShouldSetPanResponder: (_, g) => {
-        isVerticalDrag.current = Math.abs(g.dy) > Math.abs(g.dx);
-        return Math.abs(g.dy) > 10;
-      },
-      onPanResponderMove: (_, g) => {
-        if (isVerticalDrag.current) {
-          translateY.setValue(g.dy);
-        }
-      },
-      onPanResponderRelease: (_, g) => {
-        if (isVerticalDrag.current) {
-          if (g.dy < -SWIPE_THRESHOLD) {
-            // Swipe up → next card
-            Animated.spring(translateY, {
-              toValue: -CARD_H,
-              friction: 8,
-              tension: 60,
-              useNativeDriver: true,
-            }).start(() => {
-              translateY.setValue(0);
-              goToCard(currentIndex + 1);
-            });
-          } else if (g.dy > SWIPE_THRESHOLD && currentIndex > 0) {
-            // Swipe down → prev card
-            Animated.spring(translateY, {
-              toValue: CARD_H,
-              friction: 8,
-              tension: 60,
-              useNativeDriver: true,
-            }).start(() => {
-              translateY.setValue(0);
-              goToCard(currentIndex - 1);
-            });
-          } else {
-            Animated.spring(translateY, {
-              toValue: 0,
-              friction: 8,
-              tension: 60,
-              useNativeDriver: true,
-            }).start();
-          }
-        }
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: (_, gs) => Math.abs(gs.dy) > 15,
+      onPanResponderEnd: (_, gs) => {
+        if (gs.dy < -SWIPE_THRESHOLD) advanceCard(1);
+        else if (gs.dy > SWIPE_THRESHOLD) advanceCard(-1);
       },
     })
   ).current;
 
-  function handleLongPress() {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    setPaused(p => !p);
+  // Tap left/right to advance
+  function handleTap(side: 'left' | 'right') {
+    if (side === 'right') advanceCard(1);
+    else advanceCard(-1);
   }
 
-  function handleTapLeft() {
-    // Scrub effect - nothing for now, just log
-  }
+  // Start auto-advance timer
+  useEffect(() => {
+    resetAutoAdvance();
+    return () => { if (autoAdvanceTimer.current) clearTimeout(autoAdvanceTimer.current); };
+  }, [currentCard]);
 
-  function handleTapRight() {
-    goToCard(currentIndex + 1);
-  }
-
-  function handleSkip() {
-    router.replace('/wrapped/end');
-  }
-
-  if (loading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <LoadingRing />
-        <Text style={styles.loadingText}>Creating your story...</Text>
-      </View>
-    );
-  }
-
-  if (cards.length === 0) {
-    return (
-      <View style={styles.loadingContainer}>
-        <Text style={styles.loadingText}>No cards to show</Text>
-      </View>
-    );
-  }
-
-  const card = cards[currentIndex];
+  const card = cards[currentCard];
+  const CardComponent = CARD_COMPONENTS[card?.type] || HeroStatCard;
 
   return (
-    <View style={styles.container}>
-      <StatusBar hidden />
-
+    <View style={styles.container} {...panResponder.panHandlers}>
       {/* Progress dots */}
-      <View style={styles.progressWrap}>
-        <ProgressDots total={cards.length} current={currentIndex} />
+      <View style={styles.dotsContainer}>
+        <ProgressDots total={cards.length} current={currentCard} />
       </View>
 
-      {/* Card content */}
+      {/* Tap zones */}
+      <View style={styles.tapContainer}>
+        <TouchableWithoutFeedback onPress={() => handleTap('left')} style={styles.tapLeft}>
+          <View style={styles.tapLeft} />
+        </TouchableWithoutFeedback>
+        <TouchableWithoutFeedback onPress={() => handleTap('right')} style={styles.tapRight}>
+          <View style={styles.tapRight} />
+        </TouchableWithoutFeedback>
+      </View>
+
+      {/* Card */}
       <Animated.View
         style={[
           styles.cardContainer,
-          { transform: [{ translateY }] },
+          {
+            opacity: cardOpacity,
+            transform: [
+              { scale: cardScale },
+              { translateY: cardTranslateY },
+            ],
+          },
         ]}
-        {...panResponder.panHandlers}
       >
-        <TouchableWithoutFeedback onLongPress={handleLongPress}>
-          <View style={styles.cardInner}>
-            <CardRenderer card={card} />
-          </View>
-        </TouchableWithoutFeedback>
+        <CardComponent {...card.data} service={card.service} />
       </Animated.View>
 
-      {/* Paused overlay */}
-      {paused && (
-        <View style={styles.pausedOverlay}>
-          <Text style={styles.pausedText}>Paused</Text>
-          <TouchableOpacity onPress={handleLongPress}>
-            <Text style={styles.tapToResume}>Tap to resume</Text>
-          </TouchableOpacity>
-        </View>
-      )}
-
-      {/* Bottom controls */}
-      <View style={styles.bottomControls}>
-        <TouchableOpacity onPress={handleSkip}>
-          <Text style={styles.skipText}>Skip</Text>
-        </TouchableOpacity>
-        <Text style={styles.counter}>{currentIndex + 1} / {cards.length}</Text>
-        <TouchableOpacity onPress={handleTapRight}>
-          <Text style={styles.skipText}>Next</Text>
-        </TouchableOpacity>
+      {/* Card counter */}
+      <View style={styles.counter}>
+        <Text style={styles.counterText}>
+          {currentCard + 1} / {cards.length}
+        </Text>
       </View>
-
-      {/* Swipe hint */}
-      {currentIndex === 0 && (
-        <View style={styles.swipeHint}>
-          <Text style={styles.swipeHintText}>↑ Swipe up to start</Text>
-        </View>
-      )}
     </View>
   );
-}
-
-function CardRenderer({ card }: { card: WrappedCard }) {
-  const d = card.data as Record<string, unknown>;
-
-  switch (card.type) {
-    case 'hero_stat':
-      return (
-        <HeroStatCard
-          value={d.value as number | string}
-          unit={d.unit as string}
-          comparison={d.comparison as string | undefined}
-          label={d.label as string | undefined}
-          emoji={d.emoji as string | undefined}
-        />
-      );
-    case 'top_list':
-      return (
-        <TopListCard
-          title={card.title ?? ''}
-          items={(d.items as Array<{ name: string; count: number }>).map((item, i) => ({
-            ...item,
-            rank: i + 1,
-          }))}
-        />
-      );
-    case 'insight':
-      return (
-        <InsightCard
-          title={card.title ?? ''}
-          text={d.text as string}
-          chips={d.chips as string[] | undefined}
-        />
-      );
-    case 'chart':
-      return (
-        <ChartCard
-          title={card.title ?? ''}
-          chartType={d.chartType as 'area' | 'bar' | 'donut'}
-          data={d.data as number[]}
-          labels={d.labels as string[]}
-          unit={d.unit as string}
-        />
-      );
-    case 'community':
-      return (
-        <CommunityCard
-          percentile={d.percentile as number}
-          metric={d.metric as string}
-          value={d.value as string}
-        />
-      );
-    case 'comparison':
-      return (
-        <ComparisonCard
-          title={card.title ?? ''}
-          labels={d.labels as string[]}
-          values={d.values as number[]}
-          unit={d.unit as string}
-        />
-      );
-    case 'share':
-      return (
-        <ShareCard
-          stat={d.stat as string}
-          service={d.service as string}
-        />
-      );
-    default:
-      return (
-        <View style={styles.defaultCard}>
-          <Text style={styles.defaultCardText}>{card.title}</Text>
-        </View>
-      );
-  }
 }
 
 const styles = StyleSheet.create({
@@ -306,87 +177,43 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
-  loadingContainer: {
-    flex: 1,
-    backgroundColor: colors.background,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  loadingText: {
-    color: colors.secondary,
-    fontSize: 15,
-    marginTop: 16,
-  },
-  progressWrap: {
+  dotsContainer: {
     position: 'absolute',
     top: 60,
     left: 0,
     right: 0,
     zIndex: 10,
+    alignItems: 'center',
+  },
+  tapContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    flexDirection: 'row',
+    zIndex: 5,
+  },
+  tapLeft: {
+    flex: 1,
+  },
+  tapRight: {
+    flex: 1,
   },
   cardContainer: {
-    height: CARD_H,
-  },
-  cardInner: {
     flex: 1,
-    backgroundColor: colors.background,
   },
-  defaultCard: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  defaultCardText: {
-    color: colors.primary,
-    fontSize: 24,
-    fontWeight: '700',
-  },
-  pausedOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(10,10,15,0.9)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 100,
-  },
-  pausedText: {
-    fontSize: 32,
-    fontWeight: '800',
-    color: colors.primary,
-    marginBottom: 12,
-  },
-  tapToResume: {
-    fontSize: 16,
-    color: colors.secondary,
-  },
-  bottomControls: {
+  counter: {
     position: 'absolute',
     bottom: 40,
     left: 0,
     right: 0,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 24,
+    zIndex: 10,
   },
-  skipText: {
-    fontSize: 15,
-    color: colors.secondary,
-    fontWeight: '500',
-  },
-  counter: {
-    fontSize: 13,
-    color: colors.muted,
-    fontWeight: '500',
-  },
-  swipeHint: {
-    position: 'absolute',
-    bottom: 80,
-    left: 0,
-    right: 0,
-    alignItems: 'center',
-  },
-  swipeHintText: {
-    fontSize: 13,
-    color: colors.muted,
+  counterText: {
+    ...typography.caption,
+    color: colors.tertiary,
+    letterSpacing: 2,
   },
 });

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -6,10 +6,10 @@ import {
   Animated,
   Dimensions,
   TouchableOpacity,
+  Pressable,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
-import { colors } from '../lib/theme';
+import { colors, gradients, typography, spacing, radii, animation } from '../lib/theme';
 
 const { width, height } = Dimensions.get('window');
 
@@ -18,91 +18,201 @@ const ONBOARD_STEPS = [
     title: 'Connect Your Apps',
     body: 'Spotify, Strava, Health, Goodreads, Steam — your year, unified.',
     emoji: '🔗',
+    gradient: ['#7C4DFF', '#E040FB'] as const,
   },
   {
     title: 'Beautiful Stories',
     body: 'Swipe through a cinematic recap with your top stats, lists, and insights.',
     emoji: '✨',
+    gradient: ['#E040FB', '#00F5FF'] as const,
   },
   {
     title: 'Privacy First',
     body: 'Your data stays yours. We store only aggregates, never raw data.',
     emoji: '🔒',
+    gradient: ['#00F5FF', '#7C4DFF'] as const,
   },
 ];
 
 export default function IndexPage() {
   const router = useRouter();
-  const slideAnim = useRef(new Animated.Value(0)).current;
+  const [step, setStep] = useState(0);
+  const [showOnboard, setShowOnboard] = useState(false);
+
+  // Animation refs
   const logoScale = useRef(new Animated.Value(0)).current;
   const logoOpacity = useRef(new Animated.Value(0)).current;
-  const [step, setStep] = React.useState(0);
-  const [showOnboard, setShowOnboard] = React.useState(false);
+  const slideX = useRef(new Animated.Value(0)).current;
+  const stepOpacity = useRef(new Animated.Value(1)).current;
+  const emojiBounce = useRef(new Animated.Value(0)).current;
+  const ctaScale = useRef(new Animated.Value(0)).current;
+  const bgGlow = useRef(new Animated.Value(0)).current;
+  const particle1Y = useRef(new Animated.Value(0)).current;
+  const particle2Y = useRef(new Animated.Value(0)).current;
 
+  // Logo entrance
   useEffect(() => {
-    // Logo entrance
     Animated.sequence([
-      Animated.delay(300),
+      Animated.delay(200),
       Animated.parallel([
-        Animated.spring(logoScale, { toValue: 1, friction: 5, tension: 80, useNativeDriver: true }),
-        Animated.timing(logoOpacity, { toValue: 1, duration: 600, useNativeDriver: true }),
+        Animated.spring(logoScale, {
+          toValue: 1,
+          damping: 8,
+          stiffness: 100,
+          useNativeDriver: true,
+        }),
+        Animated.timing(logoOpacity, {
+          toValue: 1,
+          duration: 500,
+          useNativeDriver: true,
+        }),
       ]),
     ]).start();
 
-    // After logo, show onboarding
-    const timer = setTimeout(() => setShowOnboard(true), 1500);
+    // Glow pulse
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(bgGlow, { toValue: 1, duration: 2000, useNativeDriver: true }),
+        Animated.timing(bgGlow, { toValue: 0.3, duration: 2000, useNativeDriver: true }),
+      ])
+    ).start();
+
+    // Floating particles
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(particle1Y, { toValue: 1, duration: 6000, useNativeDriver: true }),
+        Animated.timing(particle1Y, { toValue: 0, duration: 6000, useNativeDriver: true }),
+      ])
+    ).start();
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(particle2Y, { toValue: 1, duration: 8000, useNativeDriver: true }),
+        Animated.timing(particle2Y, { toValue: 0, duration: 8000, useNativeDriver: true }),
+      ])
+    ).start();
+
+    // Show onboarding after logo
+    const timer = setTimeout(() => setShowOnboard(true), 1200);
     return () => clearTimeout(timer);
   }, []);
 
-  function nextStep() {
-    if (step < ONBOARD_STEPS.length - 1) {
-      Animated.spring(slideAnim, { toValue: -(step + 1) * width, friction: 8, tension: 60, useNativeDriver: true }).start();
-      setStep(s => s + 1);
-    } else {
+  // Animate step transitions
+  useEffect(() => {
+    if (!showOnboard) return;
+    // Animate in CTA button
+    Animated.spring(ctaScale, {
+      toValue: 1,
+      damping: 10,
+      stiffness: 80,
+      useNativeDriver: true,
+    }).start();
+  }, [showOnboard]);
+
+  function goNext() {
+    if (step >= ONBOARD_STEPS.length - 1) {
       router.replace('/(tabs)/services');
+      return;
     }
+    // Fade out current
+    Animated.parallel([
+      Animated.timing(stepOpacity, { toValue: 0, duration: 150, useNativeDriver: true }),
+      Animated.timing(emojiBounce, { toValue: 0, duration: 100, useNativeDriver: true }),
+    ]).start(() => {
+      setStep(s => s + 1);
+      emojiBounce.setValue(0);
+      stepOpacity.setValue(1);
+      Animated.spring(emojiBounce, {
+        toValue: 1,
+        damping: 8,
+        stiffness: 120,
+        useNativeDriver: true,
+      }).start();
+    });
   }
 
-  const s = ONBOARD_STEPS[step];
+  function skip() {
+    router.replace('/(tabs)/services');
+  }
+
+  const currentStep = ONBOARD_STEPS[step];
 
   return (
     <View style={styles.container}>
-      <StatusBar style="light" />
+      {/* Background glow effect */}
+      <Animated.View
+        style={[
+          styles.bgGlow,
+          {
+            opacity: bgGlow.interpolate({ inputRange: [0, 1], outputRange: [0.15, 0.35] }),
+          },
+        ]}
+      />
+
+      {/* Floating particles */}
+      <Animated.View
+        style={[
+          styles.particle,
+          {
+            left: width * 0.2,
+            top: height * 0.15,
+            opacity: 0.12,
+            transform: [{ translateY: particle1Y.interpolate({ inputRange: [0, 1], outputRange: [0, -60] }) }],
+          },
+        ]}
+      />
+      <Animated.View
+        style={[
+          styles.particle,
+          {
+            right: width * 0.15,
+            top: height * 0.6,
+            opacity: 0.08,
+            transform: [{ translateY: particle2Y.interpolate({ inputRange: [0, 1], outputRange: [0, -40] }) }],
+          },
+        ]}
+      />
+
       {/* Logo */}
-      <Animated.View style={[styles.logoArea, {
-        opacity: logoOpacity,
-        transform: [{ scale: logoScale }],
-      }]}>
+      <Animated.View
+        style={[
+          styles.logoArea,
+          {
+            opacity: logoOpacity,
+            transform: [{ scale: logoScale }],
+          },
+        ]}
+      >
         <View style={styles.logoBadge}>
           <Text style={styles.logoText}>W</Text>
         </View>
         <Text style={styles.logoName}>Wrapped</Text>
+        <Text style={styles.logoTagline}>Your year, unwrapped</Text>
       </Animated.View>
 
+      {/* Onboarding */}
       {showOnboard && (
-        <>
-          {/* Onboarding slides */}
-          <View style={styles.slideContainer}>
-            {ONBOARD_STEPS.map((st, i) => (
-              <Animated.View
-                key={i}
-                style={[styles.slide, {
-                  transform: [{
-                    translateX: Animated.subtract(
-                      slideAnim,
-                      new Animated.Value(i * width)
-                    ),
-                  }],
-                  position: 'absolute',
-                  width,
-                  left: 0,
-                }]}
-              >
-                <Text style={styles.emoji}>{st.emoji}</Text>
-                <Text style={styles.slideTitle}>{st.title}</Text>
-                <Text style={styles.slideBody}>{st.body}</Text>
-              </Animated.View>
-            ))}
+        <Animated.View style={[styles.onboardArea, { opacity: stepOpacity }]}>
+          {/* Step content */}
+          <View style={styles.stepContent}>
+            <Animated.Text
+              style={[
+                styles.stepEmoji,
+                {
+                  transform: [
+                    {
+                      scale: emojiBounce.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [0.6, 1],
+                      }),
+                    },
+                  ],
+                },
+              ]}
+            >
+              {currentStep.emoji}
+            </Animated.Text>
+            <Text style={styles.stepTitle}>{currentStep.title}</Text>
+            <Text style={styles.stepBody}>{currentStep.body}</Text>
           </View>
 
           {/* Progress dots */}
@@ -110,25 +220,33 @@ export default function IndexPage() {
             {ONBOARD_STEPS.map((_, i) => (
               <View
                 key={i}
-                style={[styles.dot, i === step && styles.dotActive]}
+                style={[
+                  styles.dot,
+                  i === step && styles.dotActive,
+                  i < step && styles.dotDone,
+                ]}
               />
             ))}
           </View>
 
           {/* CTA */}
-          <View style={styles.footer}>
-            <TouchableOpacity style={styles.ctaBtn} onPress={nextStep} activeOpacity={0.8}>
+          <Animated.View style={[styles.footer, { transform: [{ scale: ctaScale }] }]}>
+            <TouchableOpacity
+              style={styles.ctaBtn}
+              onPress={goNext}
+              activeOpacity={0.8}
+            >
               <Text style={styles.ctaText}>
-                {step < ONBOARD_STEPS.length - 1 ? 'Next' : "Let's Go"}
+                {step < ONBOARD_STEPS.length - 1 ? 'Continue' : "Let's Go"}
               </Text>
             </TouchableOpacity>
             {step < ONBOARD_STEPS.length - 1 && (
-              <TouchableOpacity onPress={() => router.replace('/(tabs)/services')}>
+              <Pressable onPress={skip} hitSlop={12}>
                 <Text style={styles.skipText}>Skip</Text>
-              </TouchableOpacity>
+              </Pressable>
             )}
-          </View>
-        </>
+          </Animated.View>
+        </Animated.View>
       )}
     </View>
   );
@@ -140,72 +258,108 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  bgGlow: {
+    position: 'absolute',
+    width: width * 1.5,
+    height: width * 1.5,
+    borderRadius: width,
+    backgroundColor: colors.accentFuchsia,
+    top: -width * 0.6,
+    left: -width * 0.25,
+  },
+  particle: {
+    position: 'absolute',
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: colors.accentCyan,
   },
   logoArea: {
     alignItems: 'center',
-    marginBottom: 60,
+    marginBottom: 40,
   },
   logoBadge: {
-    width: 80,
-    height: 80,
-    borderRadius: 22,
-    backgroundColor: colors.accentPurple,
+    width: 88,
+    height: 88,
+    borderRadius: 24,
+    backgroundColor: colors.accentFuchsia,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 16,
+    shadowColor: colors.accentFuchsia,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.5,
+    shadowRadius: 24,
   },
   logoText: {
-    fontSize: 40,
+    fontSize: 44,
     fontWeight: '900',
     color: '#fff',
+    letterSpacing: -2,
   },
   logoName: {
-    fontSize: 28,
-    fontWeight: '800',
+    ...typography.h1,
     color: colors.primary,
+    letterSpacing: -1,
   },
-  slideContainer: {
-    flex: 1,
-    width,
-    overflow: 'hidden',
+  logoTagline: {
+    ...typography.caption,
+    color: colors.secondary,
+    marginTop: 4,
   },
-  slide: {
+  onboardArea: {
     flex: 1,
+    justifyContent: 'space-between',
+    width: '100%',
+    paddingHorizontal: spacing.xl,
+  },
+  stepContent: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 40,
+    flex: 1,
   },
-  emoji: {
-    fontSize: 72,
+  stepEmoji: {
+    fontSize: 64,
     marginBottom: 24,
   },
-  slideTitle: {
-    fontSize: 28,
-    fontWeight: '800',
+  stepTitle: {
+    ...typography.h2,
     color: colors.primary,
     textAlign: 'center',
-    marginBottom: 12,
+    marginBottom: 8,
   },
-  slideBody: {
-    fontSize: 16,
+  stepBody: {
+    ...typography.body,
     color: colors.secondary,
     textAlign: 'center',
     lineHeight: 24,
+    maxWidth: 280,
   },
   dots: {
     flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
     gap: 8,
-    marginBottom: 32,
+    marginBottom: 24,
   },
   dot: {
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: colors.border,
+    backgroundColor: colors.borderLight,
   },
   dotActive: {
-    backgroundColor: colors.accentPurple,
+    backgroundColor: colors.accentFuchsia,
     width: 24,
+    shadowColor: colors.accentFuchsia,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.6,
+    shadowRadius: 8,
+  },
+  dotDone: {
+    backgroundColor: colors.accentCyan,
   },
   footer: {
     alignItems: 'center',
@@ -213,18 +367,22 @@ const styles = StyleSheet.create({
     paddingBottom: 48,
   },
   ctaBtn: {
-    backgroundColor: colors.accentPurple,
-    paddingHorizontal: 48,
-    paddingVertical: 16,
-    borderRadius: 30,
+    backgroundColor: colors.accentFuchsia,
+    paddingHorizontal: 56,
+    paddingVertical: 18,
+    borderRadius: radii.full,
+    shadowColor: colors.accentFuchsia,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 16,
   },
   ctaText: {
-    fontSize: 17,
-    fontWeight: '700',
+    ...typography.bodyMedium,
     color: '#fff',
+    letterSpacing: 0.5,
   },
   skipText: {
-    fontSize: 14,
-    color: colors.secondary,
+    ...typography.caption,
+    color: colors.tertiary,
   },
 });

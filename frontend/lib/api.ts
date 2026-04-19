@@ -10,21 +10,20 @@ export interface ServiceInfo {
   color?: string;
 }
 
+export type CardType = 'hero_stat' | 'top_list' | 'insight' | 'chart' | 'community' | 'comparison' | 'share';
+
 export interface WrappedCard {
-  id: string;
-  type: 'hero_stat' | 'top_list' | 'insight' | 'chart' | 'community' | 'comparison' | 'share';
+  type: CardType | string;
   service: string;
-  title?: string;
-  data: Record<string, unknown>;
+  data: Record<string, any>;
 }
 
 export interface WrappedData {
   sessionId: string;
-  year: number;
-  services: string[];
+  year?: number;
+  services?: string[];
   cards: WrappedCard[];
-  insights: string[];
-  createdAt: string;
+  createdAt?: string;
 }
 
 class WrappedAPI {
@@ -76,9 +75,8 @@ class WrappedAPI {
   async getWrapped(id: string): Promise<WrappedData> {
     if (this.useMock) {
       return {
-        ...MOCK_WRAPPED,
         sessionId: id,
-        insights: MOCK_WRAPPED.insights,
+        cards: MOCK_WRAPPED.cards,
       };
     }
     const res = await fetch(`http://localhost:3000/api/wrapped/${id}`);
@@ -94,7 +92,6 @@ class WrappedAPI {
         year: new Date().getFullYear(),
         services: serviceIds,
         cards: MOCK_WRAPPED.cards,
-        insights: MOCK_WRAPPED.insights,
         createdAt: new Date().toISOString(),
       };
     }

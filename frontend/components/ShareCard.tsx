@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Share } from 'react-native';
-import { colors, gradients } from '../lib/theme';
+import { colors, typography, spacing, radii } from '../lib/theme';
 
 interface Props {
   stat: string;
@@ -13,25 +13,32 @@ export function ShareCard({ stat, service }: Props) {
       await Share.share({
         message: `My ${new Date().getFullYear()} Wrapped: ${stat}. Made with Wrapped ✨`,
       });
-    } catch (e) {
-      // ignore
-    }
+    } catch (e) { /* ignore */ }
   }
 
   const serviceLabel = service.replace('_', ' ');
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
+      {/* Logo */}
+      <View style={styles.logoRow}>
         <View style={styles.logoBadge}>
           <Text style={styles.logoText}>W</Text>
         </View>
         <Text style={styles.madeWith}>Made with Wrapped</Text>
       </View>
-      <Text style={styles.year}>{new Date().getFullYear()}</Text>
-      <Text style={styles.stat}>{stat}</Text>
-      <Text style={styles.service}>{serviceLabel}</Text>
-      <TouchableOpacity style={styles.shareBtn} onPress={handleShare}>
+
+      {/* Year */}
+      <Text style={styles.yearText}>{new Date().getFullYear()}</Text>
+
+      {/* Stat */}
+      <Text style={styles.statText}>{stat}</Text>
+
+      {/* Service */}
+      <Text style={styles.serviceText}>{serviceLabel}</Text>
+
+      {/* Share button */}
+      <TouchableOpacity style={styles.shareBtn} onPress={handleShare} activeOpacity={0.8}>
         <Text style={styles.shareBtnText}>Share</Text>
       </TouchableOpacity>
     </View>
@@ -43,60 +50,70 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 32,
+    paddingHorizontal: spacing.xl,
+    backgroundColor: colors.background,
   },
-  header: {
+  logoRow: {
     alignItems: 'center',
-    marginBottom: 24,
+    marginBottom: spacing.xl,
   },
   logoBadge: {
     width: 56,
     height: 56,
     borderRadius: 16,
-    backgroundColor: colors.accentPurple,
+    backgroundColor: colors.accentFuchsia,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: spacing.sm,
+    shadowColor: colors.accentFuchsia,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.4,
+    shadowRadius: 16,
   },
   logoText: {
     fontSize: 28,
     fontWeight: '900',
     color: '#fff',
+    letterSpacing: -1,
   },
   madeWith: {
-    fontSize: 12,
-    color: colors.secondary,
-    textTransform: 'uppercase',
-    letterSpacing: 2,
+    ...typography.captionUppercase,
+    color: colors.tertiary,
+    letterSpacing: 3,
   },
-  year: {
+  yearText: {
+    ...typography.displayLarge,
     fontSize: 80,
-    fontWeight: '900',
+    lineHeight: 84,
     color: colors.primary,
-    lineHeight: 88,
+    letterSpacing: -3,
   },
-  stat: {
-    fontSize: 20,
-    fontWeight: '600',
+  statText: {
+    ...typography.h2,
     color: colors.accentCyan,
-    marginTop: 8,
+    textAlign: 'center',
+    marginTop: spacing.md,
   },
-  service: {
-    fontSize: 14,
+  serviceText: {
+    ...typography.caption,
     color: colors.secondary,
-    marginTop: 8,
     textTransform: 'capitalize',
+    marginTop: spacing.sm,
+    marginBottom: spacing.xl,
   },
   shareBtn: {
-    marginTop: 32,
-    backgroundColor: colors.primary,
-    paddingHorizontal: 32,
-    paddingVertical: 14,
-    borderRadius: 30,
+    backgroundColor: colors.accentFuchsia,
+    paddingHorizontal: 48,
+    paddingVertical: 16,
+    borderRadius: radii.full,
+    shadowColor: colors.accentFuchsia,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 12,
   },
   shareBtnText: {
-    fontSize: 16,
+    ...typography.bodyMedium,
+    color: '#fff',
     fontWeight: '700',
-    color: colors.background,
   },
 });
