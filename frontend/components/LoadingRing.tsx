@@ -1,71 +1,55 @@
 import React, { useEffect, useRef } from 'react';
-import { View, StyleSheet, Animated, Easing } from 'react-native';
-import Svg, { Circle, Defs, LinearGradient, Stop } from 'react-native-svg';
-import { colors } from '../lib/theme';
+import { View, StyleSheet, Animated, Dimensions } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { colors, spacing } from '../lib/theme';
 
-const SIZE = 56;
-const STROKE = 4;
-const R = (SIZE - STROKE) / 2;
-const CIRCUMFERENCE = 2 * Math.PI * R;
+const { width: W } = Dimensions.get('window');
+const RING_SIZE = 64;
 
-export function LoadingRing({ size = SIZE }: { size?: number }) {
+export function LoadingRing() {
   const rotation = useRef(new Animated.Value(0)).current;
-  const opacity = useRef(new Animated.Value(0)).current;
+  const pulse = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    // Fade in
-    Animated.timing(opacity, { toValue: 1, duration: 300, useNativeDriver: true }).start();
-
-    // Continuous rotation
     Animated.loop(
-      Animated.timing(rotation, {
-        toValue: 1,
-        duration: 1200,
-        easing: Easing.linear,
-        useNativeDriver: true,
-      })
+      Animated.timing(rotation, { toValue: 1, duration: 1500, useNativeDriver: true })
+    ).start();
+
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, { toValue: 1, duration: 1200, useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 0, duration: 1200, useNativeDriver: true }),
+      ])
     ).start();
   }, []);
 
-  const scale = size / SIZE;
-  const r = (size - STROKE) / 2;
-  const circ = 2 * Math.PI * r;
+  const spin = rotation.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '360deg'],
+  });
 
   return (
     <View style={styles.container}>
-      <Animated.View style={{ opacity, transform: [{ scale }] }}>
-        <Animated.View
-          style={{
-            transform: [
-              {
-                rotate: rotation.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: ['0deg', '360deg'],
-                }),
-              },
-            ],
-          }}
+      {/* Glow */}
+      <Animated.View
+        style={[
+          styles.glow,
+          {
+            opacity: pulse.interpolate({ inputRange: [0, 1], outputRange: [0.15, 0.35] }),
+          },
+        ]}
+      />
+
+      {/* Spinning ring */}
+      <Animated.View style={[styles.ring, { transform: [{ rotate: spin }] }]}>
+        <LinearGradient
+          colors={[colors.accentPurple, colors.accentFuchsia, colors.accentCyan, 'transparent']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.ringGradient}
         >
-          <Svg width={size} height={size}>
-            <Defs>
-              <LinearGradient id="ringGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-                <Stop offset="0%" stopColor="#7C4DFF" />
-                <Stop offset="50%" stopColor="#E040FB" />
-                <Stop offset="100%" stopColor="#00F5FF" stopOpacity="0.1" />
-              </LinearGradient>
-            </Defs>
-            <Circle
-              cx={size / 2}
-              cy={size / 2}
-              r={r}
-              stroke="url(#ringGrad)"
-              strokeWidth={STROKE}
-              fill="none"
-              strokeDasharray={`${circ * 0.75} ${circ * 0.25}`}
-              strokeLinecap="round"
-            />
-          </Svg>
-        </Animated.View>
+          <View style={styles.ringInner} />
+        </LinearGradient>
       </Animated.View>
     </View>
   );
@@ -73,8 +57,32 @@ export function LoadingRing({ size = SIZE }: { size?: number }) {
 
 const styles = StyleSheet.create({
   container: {
-    justifyContent: 'center',
     alignItems: 'center',
-    padding: 24,
+    justifyContent: 'center',
+    padding: spacing.xxl,
+  },
+  glow: {
+    position: 'absolute',
+    width: RING_SIZE * 2.5,
+    height: RING_SIZE * 2.5,
+    borderRadius: RING_SIZE * 1.5,
+    backgroundColor: colors.accentFuchsia,
+  },
+  ring: {
+    width: RING_SIZE,
+    height: RING_SIZE,
+  },
+  ringGradient: {
+    width: RING_SIZE,
+    height: RING_SIZE,
+    borderRadius: RING_SIZE / 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  ringInner: {
+    width: RING_SIZE - 8,
+    height: RING_SIZE - 8,
+    borderRadius: (RING_SIZE - 8) / 2,
+    backgroundColor: colors.background,
   },
 });

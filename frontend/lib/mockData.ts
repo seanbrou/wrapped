@@ -1,24 +1,12 @@
 // ═══════════════════════════════════════════════════════════════
-// Mock Data — Richer demo data for the redesigned Wrapped app
+// Mock Data — Rich demo data for Wrapped story experience
 // ═══════════════════════════════════════════════════════════════
-
-export const SERVICE_DETAILS = [
-  { id: 'spotify', name: 'Spotify', emoji: '🎧', description: 'Music, podcasts, listening history', color: '#1DB954', gradient: ['#1DB954', '#1ED760'] as const },
-  { id: 'apple_health', name: 'Apple Health', emoji: '❤️', description: 'Steps, workouts, sleep data', color: '#FF6B6B', gradient: ['#FF6B6B', '#FF8E8E'] as const },
-  { id: 'strava', name: 'Strava', emoji: '🏃', description: 'Runs, rides, activity stats', color: '#FC4C02', gradient: ['#FC4C02', '#FF6B35'] as const },
-  { id: 'goodreads', name: 'Goodreads', emoji: '📚', description: 'Books read, pages, genres', color: '#C8B882', gradient: ['#C8B882', '#F4F1EA'] as const },
-  { id: 'steam', name: 'Steam', emoji: '🎮', description: 'Games played, hours, achievements', color: '#66C0F4', gradient: ['#1B2838', '#66C0F4'] as const },
-];
 
 export const PERIODS = [
   { label: 'This Year', value: 'year' },
   { label: 'Last 6 Months', value: '6months' },
   { label: 'All Time', value: 'all' },
 ];
-
-// ═══════════════════════════════════════════════════════════════
-// Wrapped session mock
-// ═══════════════════════════════════════════════════════════════
 
 export const MOCK_WRAPPED = {
   id: 'demo-session-2026',
@@ -49,7 +37,7 @@ export const MOCK_WRAPPED = {
         ],
       },
     },
-    // 3. Community card — Spotify percentile
+    // 3. Community — Spotify percentile
     {
       type: 'community',
       service: 'spotify',
@@ -59,7 +47,7 @@ export const MOCK_WRAPPED = {
         value: '548 hours',
       },
     },
-    // 4. Insight card
+    // 4. Insight — Spotify
     {
       type: 'insight',
       service: 'spotify',
@@ -71,7 +59,7 @@ export const MOCK_WRAPPED = {
         ],
       },
     },
-    // 5. Chart card — Strava miles
+    // 5. Chart — Strava monthly miles
     {
       type: 'chart',
       service: 'strava',
@@ -82,7 +70,7 @@ export const MOCK_WRAPPED = {
         labels: ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D'],
       },
     },
-    // 6. Hero stat — Strava miles
+    // 6. Hero stat — Strava
     {
       type: 'hero_stat',
       service: 'strava',
@@ -90,10 +78,10 @@ export const MOCK_WRAPPED = {
         stat: '351',
         value: 'Miles run this year',
         unit: 'miles',
-        comparison: 'You ran a marathon every 3 days 🏃',
+        comparison: 'You ran further than NYC to DC 🏃',
       },
     },
-    // 7. Comparison — This year vs last
+    // 7. Comparison — Strava
     {
       type: 'comparison',
       service: 'strava',
@@ -104,7 +92,7 @@ export const MOCK_WRAPPED = {
         unit: 'mi',
       },
     },
-    // 8. Hero stat — Goodreads books
+    // 8. Hero stat — Goodreads
     {
       type: 'hero_stat',
       service: 'goodreads',
@@ -115,7 +103,7 @@ export const MOCK_WRAPPED = {
         comparison: "That's almost one per week 📖",
       },
     },
-    // 9. Top list — top books
+    // 9. Top list — books
     {
       type: 'top_list',
       service: 'goodreads',
@@ -130,7 +118,7 @@ export const MOCK_WRAPPED = {
         ],
       },
     },
-    // 10. Community — Goodreads percentile
+    // 10. Community — Goodreads
     {
       type: 'community',
       service: 'goodreads',
@@ -160,10 +148,10 @@ export const MOCK_WRAPPED = {
         title: 'Top Games by Hours',
         chartType: 'bar',
         data: [234, 142, 89, 76, 52],
-        labels: ['Elden Ring', 'Baldurs Gate', 'Cyberpunk', 'Hades', 'Celeste'],
+        labels: ['Elden Ring', "Baldur's Gate", 'Cyberpunk', 'Hades', 'Celeste'],
       },
     },
-    // 13. Hero stat — Apple Health steps
+    // 13. Hero stat — Apple Health
     {
       type: 'hero_stat',
       service: 'apple_health',
@@ -187,9 +175,10 @@ export const MOCK_WRAPPED = {
     // 15. Share card
     {
       type: 'share',
-      service: 'spotify',
+      service: 'all',
       data: {
-        stat: '32,847 minutes of music, 351 miles run, 47 books read',
+        stat: '32,847 minutes of music · 351 miles run · 47 books read',
+        headline: 'My 2026, Wrapped.',
       },
     },
   ],

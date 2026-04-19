@@ -30,7 +30,8 @@
       "bundler": "metro"
     },
     "plugins": [
-      "expo-web-browser"
+      "expo-web-browser",
+      "expo-router"
     ],
     "experiments": {
       "typedRoutes": true

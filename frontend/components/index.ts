@@ -5,7 +5,5 @@ export { ChartCard } from './ChartCard';
 export { CommunityCard } from './CommunityCard';
 export { ComparisonCard } from './ComparisonCard';
 export { ShareCard } from './ShareCard';
-export { LoadingRing } from './LoadingRing';
 export { ProgressDots } from './ProgressDots';
-export { GradientText } from './GradientText';
-export { ServiceCard } from './ServiceCard';
+export { LoadingRing } from './LoadingRing';

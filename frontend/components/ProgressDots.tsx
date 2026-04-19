@@ -1,6 +1,7 @@
-import React, { useEffect, useRef } from 'react';
+import React from 'react';
 import { View, StyleSheet, Animated } from 'react-native';
-import { colors } from '../lib/theme';
+import { LinearGradient } from 'expo-linear-gradient';
+import { colors, radii, spacing } from '../lib/theme';
 
 interface Props {
   total: number;
@@ -8,49 +9,27 @@ interface Props {
 }
 
 export function ProgressDots({ total, current }: Props) {
-  const pulseAnim = useRef(new Animated.Value(1)).current;
-
-  useEffect(() => {
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseAnim, { toValue: 1.3, duration: 800, useNativeDriver: true }),
-        Animated.timing(pulseAnim, { toValue: 1, duration: 800, useNativeDriver: true }),
-      ])
-    ).start();
-  }, [current]);
-
+  // Use segmented progress bar (like Instagram Stories)
   return (
     <View style={styles.container}>
-      {Array.from({ length: total }).map((_, i) => {
-        const isCurrent = i === current;
-        const isDone = i < current;
-
-        if (isCurrent) {
-          return (
-            <Animated.View
-              key={i}
-              style={[
-                styles.dot,
-                styles.dotCurrent,
-                {
-                  transform: [{ scaleX: pulseAnim }],
-                  shadowOpacity: pulseAnim.interpolate({ inputRange: [1, 1.3], outputRange: [0.6, 0.9] }),
-                },
-              ]}
-            />
-          );
-        }
-
-        return (
-          <View
-            key={i}
-            style={[
-              styles.dot,
-              isDone ? styles.dotDone : styles.dotFuture,
-            ]}
-          />
-        );
-      })}
+      {Array.from({ length: total }).map((_, i) => (
+        <View key={i} style={styles.segment}>
+          <View style={styles.segmentTrack}>
+            {i < current ? (
+              // Completed
+              <View style={[styles.segmentFill, styles.segmentComplete]} />
+            ) : i === current ? (
+              // Active — gradient fill
+              <LinearGradient
+                colors={[colors.accentPurple, colors.accentFuchsia]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.segmentFill}
+              />
+            ) : null}
+          </View>
+        </View>
+      ))}
     </View>
   );
 }
@@ -58,29 +37,24 @@ export function ProgressDots({ total, current }: Props) {
 const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 12,
+    gap: 3,
+    paddingHorizontal: spacing.md,
   },
-  dot: {
-    height: 4,
+  segment: {
+    flex: 1,
+    height: 3,
+  },
+  segmentTrack: {
+    flex: 1,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderRadius: 2,
+    overflow: 'hidden',
+  },
+  segmentFill: {
+    flex: 1,
     borderRadius: 2,
   },
-  dotCurrent: {
-    width: 20,
-    backgroundColor: colors.accentCyan,
-    shadowColor: colors.accentCyan,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.8,
-    shadowRadius: 8,
-  },
-  dotDone: {
-    width: 8,
-    backgroundColor: colors.accentFuchsia,
-  },
-  dotFuture: {
-    width: 4,
-    backgroundColor: colors.borderLight,
+  segmentComplete: {
+    backgroundColor: 'rgba(255,255,255,0.25)',
   },
 });

@@ -6,12 +6,13 @@ import { colors } from '../lib/theme';
 export default function RootLayout() {
   return (
     <View style={styles.container}>
-      <StatusBar style="light" />
+      <StatusBar style="light" translucent backgroundColor="transparent" />
       <Stack
         screenOptions={{
           headerShown: false,
           contentStyle: { backgroundColor: colors.background },
           animation: 'fade',
+          animationDuration: 300,
         }}
       >
         <Stack.Screen name="index" />
@@ -21,12 +22,13 @@ export default function RootLayout() {
           options={{
             animation: 'slide_from_bottom',
             gestureEnabled: false,
+            presentation: 'fullScreenModal',
           }}
         />
         <Stack.Screen
           name="wrapped/end"
           options={{
-            animation: 'slide_from_right',
+            animation: 'fade',
           }}
         />
       </Stack>

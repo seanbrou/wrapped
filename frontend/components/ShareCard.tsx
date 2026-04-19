@@ -1,46 +1,127 @@
-import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Share } from 'react-native';
-import { colors, typography, spacing, radii } from '../lib/theme';
+import React, { useEffect, useRef } from 'react';
+import { View, Text, StyleSheet, Animated, Dimensions, TouchableOpacity, Share } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import * as Haptics from 'expo-haptics';
+import { colors, typography, spacing, radii, shadows, motion } from '../lib/theme';
+
+const { width: W } = Dimensions.get('window');
 
 interface Props {
   stat: string;
+  headline?: string;
   service: string;
 }
 
-export function ShareCard({ stat, service }: Props) {
+export function ShareCard({ stat, headline, service }: Props) {
+  const contentOpacity = useRef(new Animated.Value(0)).current;
+  const contentScale = useRef(new Animated.Value(0.9)).current;
+  const btnOpacity = useRef(new Animated.Value(0)).current;
+  const glowPulse = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.sequence([
+      Animated.delay(300),
+      Animated.parallel([
+        Animated.timing(contentOpacity, { toValue: 1, duration: 600, useNativeDriver: true }),
+        Animated.spring(contentScale, { toValue: 1, ...motion.springGentle, useNativeDriver: true }),
+      ]),
+      Animated.timing(btnOpacity, { toValue: 1, duration: 400, useNativeDriver: true }),
+    ]).start();
+
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(glowPulse, { toValue: 1, duration: 3000, useNativeDriver: true }),
+        Animated.timing(glowPulse, { toValue: 0, duration: 3000, useNativeDriver: true }),
+      ])
+    ).start();
+  }, []);
+
   async function handleShare() {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     try {
       await Share.share({
-        message: `My ${new Date().getFullYear()} Wrapped: ${stat}. Made with Wrapped ✨`,
+        message: `${headline || 'My 2026, Wrapped.'}\n\n${stat}\n\nMade with Wrapped ✨`,
       });
-    } catch (e) { /* ignore */ }
+    } catch {}
   }
-
-  const serviceLabel = service.replace('_', ' ');
 
   return (
     <View style={styles.container}>
-      {/* Logo */}
-      <View style={styles.logoRow}>
-        <View style={styles.logoBadge}>
-          <Text style={styles.logoText}>W</Text>
-        </View>
-        <Text style={styles.madeWith}>Made with Wrapped</Text>
+      {/* Multi-color gradient background */}
+      <LinearGradient
+        colors={[colors.accentPurple, colors.accentFuchsia, colors.accentCyan]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.gradientBg}
+      />
+
+      {/* Dark overlay for readability */}
+      <View style={styles.overlay} />
+
+      {/* Glow */}
+      <Animated.View
+        style={[
+          styles.glow,
+          {
+            opacity: glowPulse.interpolate({ inputRange: [0, 1], outputRange: [0.08, 0.2] }),
+          },
+        ]}
+      />
+
+      <View style={styles.content}>
+        {/* Logo */}
+        <Animated.View
+          style={[
+            styles.logoContainer,
+            {
+              opacity: contentOpacity,
+              transform: [{ scale: contentScale }],
+            },
+          ]}
+        >
+          <View style={styles.logoBadge}>
+            <Text style={styles.logoText}>W</Text>
+          </View>
+        </Animated.View>
+
+        {/* Headline */}
+        <Animated.Text
+          style={[
+            styles.headline,
+            {
+              opacity: contentOpacity,
+              transform: [{ scale: contentScale }],
+            },
+          ]}
+        >
+          {headline || 'My 2026, Wrapped.'}
+        </Animated.Text>
+
+        {/* Stat summary */}
+        <Animated.Text
+          style={[
+            styles.stat,
+            {
+              opacity: contentOpacity,
+              transform: [{ scale: contentScale }],
+            },
+          ]}
+        >
+          {stat}
+        </Animated.Text>
+
+        {/* Share button */}
+        <Animated.View style={{ opacity: btnOpacity }}>
+          <TouchableOpacity style={styles.shareBtn} onPress={handleShare} activeOpacity={0.85}>
+            <Text style={styles.shareBtnText}>Share Your Wrapped</Text>
+          </TouchableOpacity>
+        </Animated.View>
+
+        {/* Watermark */}
+        <Animated.Text style={[styles.watermark, { opacity: contentOpacity }]}>
+          Made with Wrapped ✨
+        </Animated.Text>
       </View>
-
-      {/* Year */}
-      <Text style={styles.yearText}>{new Date().getFullYear()}</Text>
-
-      {/* Stat */}
-      <Text style={styles.statText}>{stat}</Text>
-
-      {/* Service */}
-      <Text style={styles.serviceText}>{serviceLabel}</Text>
-
-      {/* Share button */}
-      <TouchableOpacity style={styles.shareBtn} onPress={handleShare} activeOpacity={0.8}>
-        <Text style={styles.shareBtnText}>Share</Text>
-      </TouchableOpacity>
     </View>
   );
 }
@@ -48,72 +129,83 @@ export function ShareCard({ stat, service }: Props) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: colors.background,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: spacing.xl,
-    backgroundColor: colors.background,
+    overflow: 'hidden',
   },
-  logoRow: {
+  gradientBg: {
+    ...StyleSheet.absoluteFillObject,
+    opacity: 0.15,
+  },
+  overlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: colors.background,
+    opacity: 0.7,
+  },
+  glow: {
+    position: 'absolute',
+    width: W * 1.5,
+    height: W * 1.5,
+    borderRadius: W,
+    backgroundColor: colors.accentFuchsia,
+    top: -W * 0.3,
+    left: -W * 0.25,
+  },
+  content: {
     alignItems: 'center',
+    paddingHorizontal: spacing.xl,
+  },
+  logoContainer: {
     marginBottom: spacing.xl,
   },
   logoBadge: {
-    width: 56,
-    height: 56,
-    borderRadius: 16,
+    width: 64,
+    height: 64,
+    borderRadius: 20,
     backgroundColor: colors.accentFuchsia,
-    justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: spacing.sm,
-    shadowColor: colors.accentFuchsia,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.4,
-    shadowRadius: 16,
+    justifyContent: 'center',
+    ...shadows.glowFuchsia,
   },
   logoText: {
-    fontSize: 28,
+    fontSize: 32,
     fontWeight: '900',
     color: '#fff',
+    letterSpacing: -2,
+  },
+  headline: {
+    ...typography.display,
+    fontSize: 36,
+    lineHeight: 42,
+    color: colors.primary,
+    textAlign: 'center',
+    marginBottom: spacing.lg,
     letterSpacing: -1,
   },
-  madeWith: {
-    ...typography.captionUppercase,
-    color: colors.tertiary,
-    letterSpacing: 3,
-  },
-  yearText: {
-    ...typography.displayLarge,
-    fontSize: 80,
-    lineHeight: 84,
-    color: colors.primary,
-    letterSpacing: -3,
-  },
-  statText: {
-    ...typography.h2,
-    color: colors.accentCyan,
-    textAlign: 'center',
-    marginTop: spacing.md,
-  },
-  serviceText: {
-    ...typography.caption,
+  stat: {
+    ...typography.body,
     color: colors.secondary,
-    textTransform: 'capitalize',
-    marginTop: spacing.sm,
-    marginBottom: spacing.xl,
+    textAlign: 'center',
+    lineHeight: 26,
+    marginBottom: spacing.xxl,
+    maxWidth: 300,
   },
   shareBtn: {
-    backgroundColor: colors.accentFuchsia,
-    paddingHorizontal: 48,
+    backgroundColor: '#fff',
+    paddingHorizontal: 32,
     paddingVertical: 16,
     borderRadius: radii.full,
-    shadowColor: colors.accentFuchsia,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 12,
+    marginBottom: spacing.xl,
   },
   shareBtnText: {
-    ...typography.bodyMedium,
-    color: '#fff',
-    fontWeight: '700',
+    ...typography.bodySemibold,
+    color: colors.background,
+    letterSpacing: 0.3,
+  },
+  watermark: {
+    ...typography.caption,
+    color: colors.tertiary,
+    letterSpacing: 1,
   },
 });

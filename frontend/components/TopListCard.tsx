@@ -1,64 +1,102 @@
 import React, { useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, Animated } from 'react-native';
-import { colors, typography, spacing, radii } from '../lib/theme';
+import { View, Text, StyleSheet, Animated, Dimensions } from 'react-native';
+import { colors, typography, spacing, radii, motion, serviceColors } from '../lib/theme';
+
+const { width: W } = Dimensions.get('window');
+
+interface ListItem {
+  rank: number;
+  name: string;
+  stat: string;
+  emoji: string;
+}
 
 interface Props {
   title: string;
-  items: { rank: number; name: string; stat: string; emoji?: string }[];
+  items: ListItem[];
   service: string;
 }
 
-const RANK_COLORS = ['#FFD700', '#C0C0C0', '#CD7F32']; // gold, silver, bronze
-
 export function TopListCard({ title, items, service }: Props) {
+  const svc = serviceColors[service] || { primary: colors.accentFuchsia, bg: 'rgba(224,64,251,0.1)' };
+
   const titleOpacity = useRef(new Animated.Value(0)).current;
+  const titleY = useRef(new Animated.Value(15)).current;
   const itemAnims = useRef(items.map(() => new Animated.Value(0))).current;
 
   useEffect(() => {
-    Animated.stagger(120, [
-      Animated.timing(titleOpacity, { toValue: 1, duration: 400, useNativeDriver: true }),
-      ...itemAnims.map(anim =>
-        Animated.spring(anim, { toValue: 1, damping: 10, stiffness: 80, useNativeDriver: true })
-      ),
+    Animated.sequence([
+      Animated.delay(150),
+      Animated.parallel([
+        Animated.timing(titleOpacity, { toValue: 1, duration: 350, useNativeDriver: true }),
+        Animated.spring(titleY, { toValue: 0, ...motion.springGentle, useNativeDriver: true }),
+      ]),
+      Animated.stagger(120, itemAnims.map(a =>
+        Animated.spring(a, { toValue: 1, ...motion.spring, useNativeDriver: true })
+      )),
     ]).start();
   }, []);
 
+  const rankColors = ['#FFD700', '#C0C0C0', '#CD7F32', colors.secondary, colors.tertiary];
+
   return (
     <View style={styles.container}>
-      <View style={styles.serviceBadge}>
-        <Text style={styles.serviceText}>{service.replace('_', ' ')}</Text>
-      </View>
+      {/* Background glow */}
+      <View style={[styles.bgGlow, { backgroundColor: svc.primary }]} />
 
-      <Animated.View style={{ opacity: titleOpacity }}>
-        <Text style={styles.title}>{title}</Text>
-      </Animated.View>
+      <View style={styles.content}>
+        {/* Service badge */}
+        <View style={[styles.serviceBadge, { backgroundColor: svc.bg }]}>
+          <View style={[styles.serviceDot, { backgroundColor: svc.primary }]} />
+          <Text style={[styles.serviceLabel, { color: svc.primary }]}>
+            {service.replace('_', ' ').toUpperCase()}
+          </Text>
+        </View>
 
-      <View style={styles.list}>
-        {items.map((item, i) => (
-          <Animated.View
-            key={i}
-            style={[
-              styles.itemRow,
-              {
-                opacity: itemAnims[i],
-                transform: [
-                  { translateX: itemAnims[i].interpolate({ inputRange: [0, 1], outputRange: [30, 0] }) },
-                ],
-              },
-            ]}
-          >
-            <View style={[
-              styles.rankCircle,
-              i < 3 && { backgroundColor: RANK_COLORS[i] + '20', borderColor: RANK_COLORS[i] },
-            ]}>
-              <Text style={[styles.rankText, i < 3 && { color: RANK_COLORS[i] }]}>{item.rank}</Text>
-            </View>
-            <View style={styles.itemContent}>
-              <Text style={styles.itemName}>{item.emoji ? `${item.emoji} ` : ''}{item.name}</Text>
-              <Text style={styles.itemStat}>{item.stat}</Text>
-            </View>
-          </Animated.View>
-        ))}
+        {/* Title */}
+        <Animated.Text
+          style={[
+            styles.title,
+            { opacity: titleOpacity, transform: [{ translateY: titleY }] },
+          ]}
+        >
+          {title}
+        </Animated.Text>
+
+        {/* List */}
+        <View style={styles.list}>
+          {items.map((item, i) => (
+            <Animated.View
+              key={i}
+              style={[
+                styles.row,
+                {
+                  opacity: itemAnims[i],
+                  transform: [
+                    { translateX: itemAnims[i].interpolate({ inputRange: [0, 1], outputRange: [-30, 0] }) },
+                    { scale: itemAnims[i].interpolate({ inputRange: [0, 1], outputRange: [0.9, 1] }) },
+                  ],
+                },
+              ]}
+            >
+              {/* Rank */}
+              <View style={[styles.rankBadge, i === 0 && styles.rankBadgeFirst]}>
+                <Text style={[styles.rankText, { color: rankColors[i] || colors.secondary }]}>
+                  {item.rank}
+                </Text>
+              </View>
+
+              {/* Emoji */}
+              <Text style={styles.itemEmoji}>{item.emoji}</Text>
+
+              {/* Name + stat */}
+              <View style={styles.itemInfo}>
+                <Text style={styles.itemName} numberOfLines={1}>{item.name}</Text>
+                <Text style={styles.itemStat}>{item.stat}</Text>
+              </View>
+            </Animated.View>
+          ))}
+        </View>
       </View>
     </View>
   );
@@ -67,75 +105,89 @@ export function TopListCard({ title, items, service }: Props) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    justifyContent: 'center',
-    paddingHorizontal: spacing.xl,
     backgroundColor: colors.background,
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  bgGlow: {
+    position: 'absolute',
+    width: W * 1.2,
+    height: W * 1.2,
+    borderRadius: W,
+    opacity: 0.05,
+    bottom: -W * 0.3,
+    left: -W * 0.3,
+  },
+  content: {
+    paddingHorizontal: spacing.xl,
   },
   serviceBadge: {
-    position: 'absolute',
-    top: 100,
-    alignSelf: 'center',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    paddingHorizontal: 14,
+    paddingVertical: 6,
     borderRadius: radii.full,
-    backgroundColor: colors.glassFill,
-    borderWidth: 1,
-    borderColor: colors.glassStroke,
+    gap: 6,
+    marginBottom: spacing.lg,
   },
-  serviceText: {
-    ...typography.captionUppercase,
-    color: colors.secondary,
-    letterSpacing: 2,
+  serviceDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  serviceLabel: {
+    ...typography.overline,
+    fontSize: 10,
   },
   title: {
-    ...typography.h2,
-    color: colors.accentCyan,
-    textAlign: 'center',
+    ...typography.h1,
+    color: colors.primary,
     marginBottom: spacing.xl,
   },
   list: {
-    gap: spacing.md,
+    gap: 10,
   },
-  itemRow: {
+  row: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
     backgroundColor: colors.glassFill,
-    borderRadius: radii.md,
+    borderRadius: radii.lg,
     borderWidth: 1,
     borderColor: colors.glassStroke,
+    padding: spacing.md,
+    gap: spacing.md,
   },
-  rankCircle: {
+  rankBadge: {
     width: 32,
     height: 32,
-    borderRadius: 16,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.borderLight,
-    justifyContent: 'center',
+    borderRadius: 10,
+    backgroundColor: colors.glassFill2,
     alignItems: 'center',
+    justifyContent: 'center',
+  },
+  rankBadgeFirst: {
+    backgroundColor: 'rgba(255, 215, 0, 0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 215, 0, 0.2)',
   },
   rankText: {
-    ...typography.caption,
-    fontWeight: '800',
-    color: colors.secondary,
+    ...typography.bodySemibold,
+    fontSize: 15,
   },
-  itemContent: {
+  itemEmoji: {
+    fontSize: 22,
+  },
+  itemInfo: {
     flex: 1,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
   },
   itemName: {
-    ...typography.bodyMedium,
+    ...typography.bodySemibold,
     color: colors.primary,
-    flex: 1,
+    marginBottom: 2,
   },
   itemStat: {
     ...typography.caption,
-    color: colors.accentCyan,
-    fontWeight: '600',
+    color: colors.tertiary,
   },
 });
