@@ -1,0 +1,8 @@
+node_modules
+npm-debug.log
+dist
+wrapped.db
+wrapped.db-shm
+wrapped.db-wal
+.env
+.DS_Store

@@ -1,261 +1,298 @@
+import crypto from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
-import db, { aggregatedStats, wrappedSessions, connectedServices } from '../db/index.js';
-import { generateAIInsights } from '../services/insightGenerator.js';
+import {
+  aggregatedStats,
+  connectedServices,
+  dataDeletion,
+  wrappedSessions,
+} from '../db/index.js';
+import { getServiceAdapter } from '../plugins/index.js';
+import { decryptToken, encryptToken } from '../services/anonymizer.js';
 import { selectCards } from '../services/cardSelector.js';
-import type { ServiceStats } from '../types/index.js';
+import { generateAIInsights } from '../services/insightGenerator.js';
+import { requireAuth } from '../services/requestAuth.js';
+import type { ServiceId, ServiceStats } from '../types/index.js';
 
-const MOCK_STATS: ServiceStats[] = [
-  {
-    service: 'spotify',
-    period: { start: '2024-01-01', end: '2025-12-31' },
-    aggregates: {
-      top_items: [
-        { category: 'artists', items: [
-          { name: 'The Weeknd', count: 342 },
-          { name: 'Kendrick Lamar', count: 287 },
-          { name: 'Drake', count: 256 },
-          { name: 'Frank Ocean', count: 198 },
-          { name: 'Tyler, the Creator', count: 174 },
-        ]},
-        { category: 'tracks', items: [
-          { name: 'Starboy — The Weeknd', count: 87 },
-          { name: 'HUMBLE. — Kendrick Lamar', count: 76 },
-          { name: 'One Dance — Drake', count: 65 },
-        ]},
-      ],
-      totals: { topArtistsCount: 20, topTracksCount: 20, totalMinutes: 12430 },
-      streaks: {},
-      comparisons: [],
-    },
-  },
-  {
-    service: 'apple_health',
-    period: { start: '2024-01-01', end: '2025-12-31' },
-    aggregates: {
-      top_items: [],
-      totals: { totalSteps: 3847291, workouts: 187, calories: 89234, activeMinutes: 14230, sleepHours: 2450 },
-      streaks: {},
-      comparisons: [],
-    },
-  },
-  {
-    service: 'strava',
-    period: { start: '2024-01-01', end: '2025-12-31' },
-    aggregates: {
-      top_items: [{ category: 'activities', items: [] }],
-      totals: { totalDistanceKm: 1247, activityCount: 94 },
-      streaks: { topSport: 'Running' },
-      comparisons: [],
-    },
-  },
-  {
-    service: 'goodreads',
-    period: { start: '2024-01-01', end: '2025-12-31' },
-    aggregates: {
-      top_items: [],
-      totals: { booksRead: 47, pagesRead: 12834 },
-      streaks: {},
-      comparisons: [],
-    },
-  },
-  {
-    service: 'steam',
-    period: { start: '2024-01-01', end: '2025-12-31' },
-    aggregates: {
-      top_items: [{ category: 'games', items: [
-        { name: "Baldur's Gate 3", count: 0 },
-        { name: 'Elden Ring', count: 0 },
-        { name: 'Cyberpunk 2077', count: 0 },
-      ]}],
-      totals: { gamesPlayed: 12, totalHours: 1347 },
-      streaks: {},
-      comparisons: [],
-    },
-  },
-];
+function resolveRange(input: {
+  period?: string;
+  periodStart?: string;
+  periodEnd?: string;
+}) {
+  const end = input.periodEnd ? new Date(input.periodEnd) : new Date();
+  let start: Date;
 
-async function buildWrapped(
-  userId: string,
-  serviceIds: string[],
-  periodStart: string,
-  periodEnd: string
-): Promise<{ sessionId: string; cards: object[]; insights: string[]; services: string[] }> {
+  if (input.periodStart) {
+    start = new Date(input.periodStart);
+  } else {
+    start = new Date(end);
+    if (input.period === '6months') {
+      start.setMonth(start.getMonth() - 6);
+    } else if (input.period === 'all') {
+      start.setFullYear(start.getFullYear() - 5);
+    } else {
+      start.setFullYear(start.getFullYear() - 1);
+    }
+  }
+
+  return {
+    start,
+    end,
+    startIso: start.toISOString().slice(0, 10),
+    endIso: end.toISOString().slice(0, 10),
+  };
+}
+
+function periodLabel(startIso: string, endIso: string) {
+  return `${startIso} to ${endIso}`;
+}
+
+async function loadStats(input: {
+  userId: string;
+  serviceIds: ServiceId[];
+  periodStart: string;
+  periodEnd: string;
+  localAggregates: Array<{ service: ServiceId; periodStart: string; periodEnd: string; data: Record<string, unknown> }>;
+}) {
   const stats: ServiceStats[] = [];
+  const localMap = new Map(input.localAggregates.map((aggregate) => [aggregate.service, aggregate]));
 
-  // Try loading real data from DB
-  for (const service of serviceIds) {
-    const stored = aggregatedStats.get(userId, service, periodStart, periodEnd);
-    if (stored) {
-      stats.push({
-        service,
-        period: { start: periodStart, end: periodEnd },
-        aggregates: stored.data as ServiceStats['aggregates'],
+  for (const serviceId of input.serviceIds) {
+    const localAggregate = localMap.get(serviceId);
+    if (localAggregate) {
+        stats.push({
+          service: serviceId,
+          period: { start: localAggregate.periodStart, end: localAggregate.periodEnd },
+          aggregates: localAggregate.data as unknown as ServiceStats['aggregates'],
+        });
+      continue;
+    }
+
+    const exact = await aggregatedStats.getForPeriod(
+      input.userId,
+      serviceId,
+      input.periodStart,
+      input.periodEnd,
+    );
+    if (exact) {
+        stats.push({
+          service: serviceId,
+          period: { start: exact.periodStart, end: exact.periodEnd },
+          aggregates: exact.data as unknown as ServiceStats['aggregates'],
+        });
+      continue;
+    }
+
+    const latest = await aggregatedStats.getLatest(input.userId, serviceId);
+    if (latest) {
+        stats.push({
+          service: serviceId,
+          period: { start: latest.periodStart, end: latest.periodEnd },
+          aggregates: latest.data as unknown as ServiceStats['aggregates'],
+        });
+      continue;
+    }
+
+    const connection = await connectedServices.get(input.userId, serviceId);
+    const adapter = getServiceAdapter(serviceId);
+    if (!connection || !adapter?.sync) continue;
+
+    let accessToken = connection.accessTokenEncrypted ? decryptToken(connection.accessTokenEncrypted) : null;
+    let refreshToken = connection.refreshTokenEncrypted ? decryptToken(connection.refreshTokenEncrypted) : null;
+
+    if (
+      adapter.refresh &&
+      refreshToken &&
+      connection.expiresAt &&
+      connection.expiresAt <= Date.now() + 60_000
+    ) {
+      const refreshed = await adapter.refresh(refreshToken, connection.metadata);
+      accessToken = refreshed.accessToken;
+      refreshToken = refreshed.refreshToken ?? refreshToken;
+      await connectedServices.upsert({
+        userId: input.userId,
+        service: serviceId,
+        externalAccountId: refreshed.externalAccountId ?? connection.externalAccountId,
+        accessTokenEncrypted: accessToken ? encryptToken(accessToken) : null,
+        refreshTokenEncrypted: refreshToken ? encryptToken(refreshToken) : null,
+        tokenType: refreshed.tokenType ?? connection.tokenType,
+        scope: refreshed.scope ?? connection.scope,
+        expiresAt: refreshed.expiresAt ?? connection.expiresAt,
+        metadata: refreshed.metadata ?? connection.metadata,
       });
     }
+
+    const synced = await adapter.sync({
+      accessToken,
+      refreshToken,
+      externalAccountId: connection.externalAccountId,
+      connectionMetadata: connection.metadata,
+      periodStart: new Date(input.periodStart),
+      periodEnd: new Date(input.periodEnd),
+    });
+
+    await aggregatedStats.upsert({
+      userId: input.userId,
+      service: serviceId,
+      periodStart: synced.period.start,
+      periodEnd: synced.period.end,
+      data: synced.aggregates,
+    });
+
+    stats.push(synced);
   }
 
-  // Fall back to rich mock data so the app is always demonstrable
-  if (stats.length === 0) {
-    for (const mock of MOCK_STATS) {
-      if (serviceIds.includes(mock.service)) {
-        stats.push({ ...mock, period: { start: periodStart, end: periodEnd } });
-      }
-    }
-    // Add any extra services the user selected
-    const extraServices = serviceIds.filter(s => !MOCK_STATS.find(m => m.service === s));
-    for (const id of extraServices) {
-      stats.push({
-        service: id,
-        period: { start: periodStart, end: periodEnd },
-        aggregates: { top_items: [], totals: {}, streaks: {}, comparisons: [] },
-      });
-    }
-  }
-
-  const periodLabel = `${periodStart} → ${periodEnd}`;
-  console.log(`[wrapped] Generating wrapped for user=${userId} services=${serviceIds.join(',')} period=${periodLabel}`);
-
-  const [insights, cards] = await Promise.all([
-    generateAIInsights(stats, periodLabel),
-    Promise.resolve(selectCards(stats, 15)),
-  ]);
-
-  const sessionId = crypto.randomUUID();
-  wrappedSessions.create(sessionId, userId, serviceIds, periodStart, periodEnd, cards, insights);
-
-  return { sessionId, cards, insights, services: serviceIds };
+  return stats;
 }
 
 export async function wrappedRoutes(fastify: FastifyInstance) {
-
-  // POST /api/wrapped/generate
   fastify.post<{
-    Body: { serviceIds: string[]; periodStart?: string; periodEnd?: string }
+    Body: {
+      serviceIds: ServiceId[];
+      period?: string;
+      periodStart?: string;
+      periodEnd?: string;
+      templateId?: string;
+      templateName?: string;
+      accentKey?: string;
+      localAggregates?: Array<{
+        service: ServiceId;
+        periodStart: string;
+        periodEnd: string;
+        data: Record<string, unknown>;
+      }>;
+    }
   }>('/wrapped/generate', async (request, reply) => {
-    const userId = (request.headers['x-user-id'] as string) || 'demo-user';
-    const { serviceIds = [], periodStart, periodEnd } = request.body;
+    const auth = await requireAuth(request, reply);
+    if (!auth) return;
 
+    const serviceIds = [...new Set(request.body?.serviceIds ?? [])] as ServiceId[];
     if (serviceIds.length === 0) {
       return reply.status(400).send({ error: 'At least one service is required' });
     }
 
-    const end = periodEnd || new Date().toISOString().split('T')[0];
-    const yearStart = new Date();
-    yearStart.setFullYear(yearStart.getFullYear() - 1);
-    const start = periodStart || yearStart.toISOString().split('T')[0];
+    const range = resolveRange(request.body ?? {});
 
     try {
-      const result = await buildWrapped(userId, serviceIds, start, end);
-      return { data: result };
-    } catch (err) {
-      console.error('[wrapped] generate error:', err);
-      return reply.status(500).send({ error: 'Failed to generate wrapped' });
-    }
-  });
+      const stats = await loadStats({
+        userId: auth.userId,
+        serviceIds,
+        periodStart: range.startIso,
+        periodEnd: range.endIso,
+        localAggregates: request.body?.localAggregates ?? [],
+      });
 
-  // GET /api/wrapped/:id
-  fastify.get<{ Params: { id: string } }>('/wrapped/:id', async (request, reply) => {
-    const session = wrappedSessions.get(request.params.id);
-    if (!session) {
-      return reply.status(404).send({ error: 'Wrapped not found' });
-    }
-    return { data: session };
-  });
-
-  // POST /api/wrapped/:id/share — generate shareable assets for a wrapped session
-  fastify.post<{ Params: { id: string } }>('/wrapped/:id/share', async (request, reply) => {
-    const session = wrappedSessions.get(request.params.id);
-    if (!session) {
-      return reply.status(404).send({ error: 'Wrapped not found' });
-    }
-
-    // Find the share card (always last)
-    const shareCards = (session.cards as object[]).filter(
-      (c: object) => (c as Record<string, unknown>).type === 'share'
-    );
-
-    // Build shareable metadata for each card type that supports sharing
-    const shareableCards = (session.cards as object[]).map((card: object) => {
-      const c = card as Record<string, unknown>;
-      let shareText = '';
-      let imageData: string | null = null;
-
-      switch (c.type) {
-        case 'hero_stat': {
-          const d = c.data as Record<string, unknown>;
-          shareText = `My Wrapped: ${d.value} ${d.unit} ${d.comparison || ''}`.trim();
-          break;
-        }
-        case 'top_list': {
-          const items = (c.data as Record<string, unknown>).items as Array<Record<string, unknown>>;
-          const top3 = items.slice(0, 3).map((i, idx) => `#${idx + 1} ${i.name}`).join(' · ');
-          shareText = `My top ${(c.data as Record<string, unknown>).category}: ${top3}`;
-          break;
-        }
-        case 'insight':
-          shareText = (c.data as Record<string, unknown>).text as string;
-          break;
-        default:
-          shareText = `My ${new Date().getFullYear()} Wrapped`;
+      if (stats.length === 0) {
+        return reply.status(400).send({ error: 'No synced data found for the selected services' });
       }
 
-      return {
-        cardId: c.id,
-        cardType: c.type,
-        service: c.service,
-        shareText,
-        // In production, this would be a pre-generated image URL from a canvas/OG service
-        // For now, we return the text that the client renders into a share card
-        imageUrl: null,
-      };
-    });
+      const copyByService = await generateAIInsights(stats, periodLabel(range.startIso, range.endIso));
+      const cards = selectCards(stats, copyByService, 15);
+      const sessionId = crypto.randomUUID();
+      const session = await wrappedSessions.create({
+        id: sessionId,
+        userId: auth.userId,
+        services: serviceIds,
+        periodStart: range.startIso,
+        periodEnd: range.endIso,
+        cards,
+        insights: Object.values(copyByService)
+          .map((value) => value?.insightHeadline)
+          .filter((value): value is string => Boolean(value)),
+        templateId: request.body?.templateId ?? null,
+        templateName: request.body?.templateName ?? null,
+        accentKey: request.body?.accentKey ?? null,
+      });
 
-    // Generate a summary share card
-    const summary = {
-      totalCards: session.cards.length,
-      services: session.services,
-      periodStart: session.periodStart,
-      periodEnd: session.periodEnd,
-      shareUrl: `wrapped://view/${session.id}`,
-    };
+      return {
+        data: {
+          sessionId: session.id,
+          services: session.services,
+          cards: session.cards,
+          createdAt: session.createdAt,
+        },
+      };
+    } catch (error) {
+      console.error('[wrapped] generation failed', error);
+      return reply.status(500).send({ error: 'Failed to generate wrapped session' });
+    }
+  });
+
+  fastify.get<{ Params: { id: string } }>('/wrapped/:id', async (request, reply) => {
+    const auth = await requireAuth(request, reply);
+    if (!auth) return;
+
+    const session = await wrappedSessions.get(request.params.id);
+    if (!session || session.userId !== auth.userId) {
+      return reply.status(404).send({ error: 'Wrapped session not found' });
+    }
 
     return {
       data: {
         sessionId: session.id,
-        shareableCards,
-        shareCards,
-        summary,
-        // Pre-generated share card images (in production: upload to CDN and return URLs)
-        // For MVP: client renders share cards natively
+        services: session.services,
+        cards: session.cards,
+        createdAt: session.createdAt,
       },
     };
   });
 
-  // DELETE /api/me — GDPR full deletion
+  fastify.post<{ Params: { id: string } }>('/wrapped/:id/share', async (request, reply) => {
+    const auth = await requireAuth(request, reply);
+    if (!auth) return;
+
+    const session = await wrappedSessions.get(request.params.id);
+    if (!session || session.userId !== auth.userId) {
+      return reply.status(404).send({ error: 'Wrapped session not found' });
+    }
+
+    const shareCard = session.cards.find((card) => card.type === 'share');
+    return {
+      data: {
+        sessionId: session.id,
+        shareCard: shareCard?.data ?? null,
+        summary: {
+          services: session.services,
+          periodStart: session.periodStart,
+          periodEnd: session.periodEnd,
+          cardCount: session.cards.length,
+        },
+      },
+    };
+  });
+
   fastify.delete('/me', async (request, reply) => {
-    const userId = (request.headers['x-user-id'] as string) || 'demo-user';
-    db.prepare(`DELETE FROM connected_services WHERE user_id = ?`).run(userId);
-    db.prepare(`DELETE FROM aggregated_stats WHERE user_id = ?`).run(userId);
-    db.prepare(`DELETE FROM wrapped_sessions WHERE user_id = ?`).run(userId);
-    db.prepare(`DELETE FROM saved_wrappeds WHERE user_id = ?`).run(userId);
-    console.log(`[gdpr] All data deleted for user ${userId}`);
+    const auth = await requireAuth(request, reply);
+    if (!auth) return;
+
+    await dataDeletion.deleteAllForUser(auth.userId);
     return { data: { deleted: true } };
   });
 
-  // GET /api/me/export — download all user data
   fastify.get('/me/export', async (request, reply) => {
-    const userId = (request.headers['x-user-id'] as string) || 'demo-user';
-    const services = connectedServices.list(userId);
-    const stats = db.prepare(`SELECT * FROM aggregated_stats WHERE user_id = ?`).all(userId);
+    const auth = await requireAuth(request, reply);
+    if (!auth) return;
+
+    const sessions = await wrappedSessions.listForUser(auth.userId, 50);
+    const services = (await connectedServices.list(auth.userId)).map((service) => ({
+      service: service.service,
+      connectedAt: service.connectedAt,
+      lastSyncedAt: service.lastSyncedAt,
+      externalAccountId: service.externalAccountId,
+    }));
+
     return {
       data: {
-        userId,
+        userId: auth.userId,
         exportedAt: new Date().toISOString(),
-        connectedServices: services.map((s: Record<string, unknown>) => ({
-          service: s.service,
-          connectedAt: s.connected_at,
+        connectedServices: services,
+        wrappedSessions: sessions.map((session) => ({
+          id: session.id,
+          services: session.services,
+          createdAt: session.createdAt,
+          cardCount: session.cards.length,
+          periodStart: session.periodStart,
+          periodEnd: session.periodEnd,
         })),
-        stats,
       },
     };
   });

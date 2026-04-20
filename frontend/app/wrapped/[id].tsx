@@ -13,7 +13,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { colors, type, space, motion, accentFor } from '../../lib/theme';
-import { MOCK_WRAPPED } from '../../lib/mockData';
+import { api } from '../../lib/api';
 import {
   HeroStatCard,
   TopListCard,
@@ -41,8 +41,9 @@ const CARDS: Record<string, React.ComponentType<any>> = {
 export default function Player() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  useLocalSearchParams<{ id: string }>();
-  const cards = MOCK_WRAPPED.cards;
+  const params = useLocalSearchParams<{ id: string }>();
+  const [cards, setCards] = useState<Array<{ type: string; service: string; data: Record<string, unknown> }>>([]);
+  const captureTargetRef = useRef<any>(null);
 
   const [i, setI] = useState(0);
   const [paused, setPaused] = useState(false);
@@ -68,8 +69,20 @@ export default function Player() {
     }).start();
   }, []);
 
+  useEffect(() => {
+    if (typeof params.id !== 'string') return;
+    api.getWrapped(params.id)
+      .then((session) => {
+        setCards(session.cards);
+      })
+      .catch(() => {
+        router.back();
+      });
+  }, [params.id, router]);
+
   // Drive the segment progress for the active card.
   useEffect(() => {
+    if (cards.length === 0) return;
     startSegment();
     return () => segAnim.current?.stop();
   }, [i, paused]);
@@ -96,7 +109,11 @@ export default function Player() {
     if (nextIndex < 0) return;
     if (nextIndex >= cards.length) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      router.push('/wrapped/end');
+      if (typeof params.id === 'string') {
+        router.push({ pathname: '/wrapped/end', params: { id: params.id } });
+      } else {
+        router.push('/wrapped/end');
+      }
       return;
     }
     Haptics.selectionAsync();
@@ -159,11 +176,16 @@ export default function Player() {
   ).current;
 
   const card = cards[i];
+  if (!card) {
+    return <View style={styles.screen} />;
+  }
+
   const Card = CARDS[card.type] ?? HeroStatCard;
   const accent = accentFor(i);
 
   return (
     <Animated.View
+      ref={captureTargetRef}
       style={[styles.screen, { opacity: entry }]}
       {...pan.panHandlers}
     >
@@ -191,6 +213,9 @@ export default function Player() {
           accent={accent}
           storyIndex={i}
           total={cards.length}
+          onShare={card.type === 'share' && typeof params.id === 'string'
+            ? () => api.shareWrapped(params.id as string, captureTargetRef)
+            : undefined}
         />
       </Animated.View>
 

@@ -1,339 +1,426 @@
-import type { ServiceStats, WrappedCard } from '../types/index.js';
+import crypto from 'node:crypto';
+import type {
+  ServiceCopySuggestions,
+  ServiceId,
+  ServiceStats,
+  WrappedCard,
+} from '../types/index.js';
 
-let cardCounter = 0;
-function makeCardId() {
-  return `card_${Date.now()}_${++cardCounter}`;
+function cardId() {
+  return crypto.randomUUID();
 }
 
-function scoreStat(stat: ServiceStats): number {
-  const totals = stat.aggregates.totals;
-  let score = 0;
-  for (const v of Object.values(totals)) {
-    score += typeof v === 'number' ? v : 0;
-  }
-  return score;
+function shortNumber(value: number) {
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
+  if (value >= 1_000) return `${(value / 1_000).toFixed(1)}K`;
+  return value.toLocaleString();
 }
 
-// ── Card Builders ────────────────────────────────────────────────────────────
-
-function introCard(): WrappedCard {
-  return {
-    id: makeCardId(),
-    type: 'hero_stat',
-    service: 'intro',
-    title: "Here's Your Year",
-    data: { value: 2025, unit: '', label: "2025 Wrapped" },
-  };
+function percentileFromMetric(value: number) {
+  const bounded = Math.max(0, Math.min(24, Math.round(Math.log10(Math.max(1, value)) * 6)));
+  return Math.max(1, 25 - bounded);
 }
 
-function heroStat(
-  stat: ServiceStats,
-  key: string,
-  label: string,
-  unit: string,
-  comparison?: string,
-  emoji?: string
-): WrappedCard {
-  const value = stat.aggregates.totals[key] as number || 0;
-  return {
-    id: makeCardId(),
-    type: 'hero_stat',
-    service: stat.service,
-    title: label,
-    data: { value, unit, comparison, label, emoji },
-  };
-}
-
-function topListCard(stat: ServiceStats): WrappedCard | null {
-  for (const category of stat.aggregates.top_items) {
-    if (category.items.length > 0) {
-      return {
-        id: makeCardId(),
-        type: 'top_list',
-        service: stat.service,
-        title: `Your Top ${category.category.charAt(0).toUpperCase() + category.category.slice(1)}`,
-        data: { items: category.items.slice(0, 5), category: category.category },
-      };
-    }
-  }
-  return null;
-}
-
-function insightCard(stat: ServiceStats, title: string, text: string, chips?: string[]): WrappedCard {
-  return {
-    id: makeCardId(),
-    type: 'insight',
-    service: stat.service,
-    title,
-    data: { text, chips: chips || [] },
-  };
-}
-
-function chartCard(
-  stat: ServiceStats,
+function buildTopList(
+  service: ServiceId,
   title: string,
-  chartType: 'area' | 'bar' | 'donut',
-  data: number[],
-  labels: string[],
-  unit: string
-): WrappedCard {
+  items: Array<{ name: string; count: number }>,
+): WrappedCard | null {
+  if (!items.length) return null;
   return {
-    id: makeCardId(),
+    id: cardId(),
+    type: 'top_list',
+    service,
+    data: {
+      title,
+      items: items.slice(0, 5).map((item, index) => ({
+        rank: index + 1,
+        name: item.name,
+        stat: item.count > 0 ? `${shortNumber(item.count)} plays` : 'Top of the year',
+      })),
+    },
+  };
+}
+
+function buildChart(service: ServiceId, stats: ServiceStats): WrappedCard | null {
+  const chart = stats.aggregates.charts?.[0];
+  if (!chart || !chart.data.length || !chart.labels.length) return null;
+
+  return {
+    id: cardId(),
     type: 'chart',
-    service: stat.service,
-    title,
-    data: { chartType, data, labels, unit },
+    service,
+    data: {
+      title: chart.title,
+      chartType: chart.chartType,
+      data: chart.data,
+      labels: chart.labels,
+    },
   };
 }
 
-function communityCard(stat: ServiceStats, metric: string, value: string, percentile: number): WrappedCard {
-  return {
-    id: makeCardId(),
-    type: 'community',
-    service: stat.service,
-    title: 'How You Stack Up',
-    data: { metric, value, percentile },
-  };
-}
+function buildComparison(service: ServiceId, stats: ServiceStats, title: string): WrappedCard | null {
+  const comparison = stats.aggregates.comparisons[0];
+  if (!comparison) return null;
 
-function comparisonCard(
-  stat: ServiceStats,
-  title: string,
-  label1: string,
-  val1: number,
-  label2: string,
-  val2: number,
-  unit: string
-): WrappedCard {
   return {
-    id: makeCardId(),
+    id: cardId(),
     type: 'comparison',
-    service: stat.service,
-    title,
-    data: { labels: [label1, label2], values: [val1, val2], unit },
+    service,
+    data: {
+      title,
+      labels: ['This Year', comparison.label],
+      values: [comparison.current, comparison.previous],
+      unit: comparison.unit ?? '',
+    },
   };
 }
 
-function shareCard(stat: ServiceStats, statText: string): WrappedCard {
+function buildCommunity(service: ServiceId, metric: string, value: string, score: number): WrappedCard {
   return {
-    id: makeCardId(),
-    type: 'share',
-    service: stat.service,
-    title: 'My 2025 Wrapped',
-    data: { stat: statText, service: stat.service },
+    id: cardId(),
+    type: 'community',
+    service,
+    data: {
+      percentile: percentileFromMetric(score),
+      metric,
+      value,
+    },
   };
 }
 
-// ── Service-Specific Card Strategies ─────────────────────────────────────────
+function buildSpotifyCards(stats: ServiceStats, copy?: ServiceCopySuggestions): WrappedCard[] {
+  const artists = stats.aggregates.top_items.find((group) => group.category === 'artists')?.items ?? [];
+  const tracks = stats.aggregates.top_items.find((group) => group.category === 'tracks')?.items ?? [];
+  const genres = stats.aggregates.top_items.find((group) => group.category === 'genres')?.items ?? [];
+  const topArtist = artists[0]?.name ?? 'No artist';
+  const topGenre = genres[0]?.name ?? 'genre-hopping';
+  const sample = stats.aggregates.totals.recentPlaysSample ?? tracks.length;
 
-function spotifyCards(stats: ServiceStats): WrappedCard[] {
-  const cards: WrappedCard[] = [];
-  const s = stats;
-  const totals = s.aggregates.totals;
+  const cards: WrappedCard[] = [
+    {
+      id: cardId(),
+      type: 'hero_stat',
+      service: 'spotify',
+      data: {
+        stat: topArtist,
+        value: 'Your most-played artist',
+        comparison: copy?.heroComparison ?? `${topGenre} dominated your top artists this year.`,
+      },
+    },
+  ];
 
-  // Hero stat: total listening time
-  if (totals.totalMinutes) {
-    const hours = Math.round((totals.totalMinutes as number) / 60);
-    cards.push(heroStat(s, 'totalMinutes', `${hours} Hours`, 'of music streamed', 'Up 23% from last year', '🎧'));
-  }
+  const topArtists = buildTopList('spotify', 'Your Top Artists', artists);
+  if (topArtists) cards.push(topArtists);
 
-  // Top artists list
-  const artistsList = topListCard(s);
-  if (artistsList) cards.push(artistsList);
+  cards.push({
+    id: cardId(),
+    type: 'insight',
+    service: 'spotify',
+    data: {
+      headline:
+        copy?.insightHeadline ??
+        `Your favorites kept orbiting around ${topGenre}, with ${topArtist} at the center`,
+      supportingData:
+        copy?.insightSupportingData ?? [
+          { label: 'TOP GENRE', value: topGenre.toUpperCase() },
+          { label: 'RECENT SAMPLE', value: String(sample) },
+        ],
+    },
+  });
 
-  // Genre insight
-  const topArtists = s.aggregates.top_items.find(c => c.category === 'artists');
-  if (topArtists?.items[0]) {
-    cards.push(insightCard(s, 'Your #1 Artist', `${topArtists.items[0].name} was your soundtrack this year. No surprise there.`, [`Top 1: ${topArtists.items[0].name}`]));
-  }
+  const chart = buildChart('spotify', stats);
+  if (chart) cards.push(chart);
 
-  // Monthly heatmap-style chart (mock for now)
-  const monthlyData = [120, 145, 132, 158, 167, 189, 201, 195, 178, 210, 234, 256];
-  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  cards.push(chartCard(s, 'Your Listening Journey', 'area', monthlyData, months, 'hours'));
-
+  cards.push(buildCommunity('spotify', 'artist affinity', `${sample} recent plays sampled`, sample));
   return cards;
 }
 
-function healthCards(stats: ServiceStats): WrappedCard[] {
-  const cards: WrappedCard[] = [];
-  const s = stats;
-  const totals = s.aggregates.totals;
+function buildStravaCards(stats: ServiceStats, copy?: ServiceCopySuggestions): WrappedCard[] {
+  const distanceKm = stats.aggregates.totals.totalDistanceKm ?? 0;
+  const movingHours = stats.aggregates.totals.totalMovingHours ?? 0;
+  const activityCount = stats.aggregates.totals.activityCount ?? 0;
+  const topSport = String(stats.aggregates.streaks.topSport ?? 'Running');
+  const sports = stats.aggregates.top_items.find((group) => group.category === 'sports')?.items ?? [];
 
-  // Steps hero
-  if (totals.totalSteps) {
-    const miles = Math.round((totals.totalSteps as number) / 2000 * 10) / 10;
-    cards.push(heroStat(s, 'totalSteps', `${(totals.totalSteps as number / 1_000_000).toFixed(1)}M`, 'steps taken', `${miles} miles walked`, '👟'));
-  }
+  const cards: WrappedCard[] = [
+    {
+      id: cardId(),
+      type: 'hero_stat',
+      service: 'strava',
+      data: {
+        stat: shortNumber(Math.round(distanceKm)),
+        value: 'Kilometers logged',
+        comparison: copy?.heroComparison ?? `${topSport} led the way across ${activityCount} activities.`,
+      },
+    },
+  ];
 
-  // Workouts chart
-  if (totals.workouts) {
-    const monthlyWorkouts = [12, 15, 18, 14, 21, 19, 22, 25, 20, 23, 28, 31];
-    cards.push(chartCard(s, 'Workouts This Year', 'bar', monthlyWorkouts, ['J','F','M','A','M','J','J','A','S','O','N','D'], 'sessions'));
-  }
+  const topSports = buildTopList('strava', 'Your Top Sports', sports);
+  if (topSports) cards.push(topSports);
 
-  // Calories
-  if (totals.calories) {
-    const caloriesK = Math.round((totals.calories as number) / 1000);
-    cards.push(heroStat(s, 'calories', `${caloriesK}K`, 'calories burned', 'Fueled by pure determination', '🔥'));
-  }
+  cards.push({
+    id: cardId(),
+    type: 'insight',
+    service: 'strava',
+    data: {
+      headline:
+        copy?.insightHeadline ??
+        `${shortNumber(Math.round(movingHours))} moving hours turned into a seriously consistent year`,
+      supportingData:
+        copy?.insightSupportingData ?? [
+          { label: 'ACTIVITIES', value: String(activityCount) },
+          { label: 'TOP SPORT', value: topSport.toUpperCase() },
+        ],
+    },
+  });
 
+  const chart = buildChart('strava', stats);
+  if (chart) cards.push(chart);
+
+  const comparison = buildComparison('strava', stats, 'You vs Average Month');
+  if (comparison) cards.push(comparison);
+
+  cards.push(buildCommunity('strava', 'distance', `${shortNumber(Math.round(distanceKm))} km`, distanceKm));
   return cards;
 }
 
-function stravaCards(stats: ServiceStats): WrappedCard[] {
-  const cards: WrappedCard[] = [];
-  const s = stats;
-  const totals = s.aggregates.totals;
-  const topSport = (s.aggregates.streaks.topSport as string) || 'Running';
+function buildFitbitCards(stats: ServiceStats, copy?: ServiceCopySuggestions): WrappedCard[] {
+  const totalSteps = stats.aggregates.totals.totalSteps ?? 0;
+  const calories = stats.aggregates.totals.caloriesBurned ?? 0;
+  const activeMinutes = stats.aggregates.totals.activeMinutes ?? 0;
+  const bestDay = stats.aggregates.streaks.bestDaySteps ?? 0;
 
-  if (totals.totalDistanceKm) {
-    const km = totals.totalDistanceKm as number;
-    const manhattanLoops = Math.round(km / 59); // ~59km around Manhattan
-    cards.push(heroStat(s, 'totalDistanceKm', `${km.toLocaleString()} km`, 'covered', `That's ${manhattanLoops}x around Manhattan`, '🏃'));
-  }
+  const cards: WrappedCard[] = [
+    {
+      id: cardId(),
+      type: 'hero_stat',
+      service: 'fitbit',
+      data: {
+        stat: shortNumber(totalSteps),
+        value: 'Steps tracked',
+        comparison: copy?.heroComparison ?? `${shortNumber(activeMinutes)} active minutes kept the year moving.`,
+      },
+    },
+    {
+      id: cardId(),
+      type: 'insight',
+      service: 'fitbit',
+      data: {
+        headline:
+          copy?.insightHeadline ??
+          `Your best day hit ${shortNumber(Number(bestDay))} steps, and your streak never really let up`,
+        supportingData:
+          copy?.insightSupportingData ?? [
+            { label: 'CALORIES', value: shortNumber(calories) },
+            { label: 'ACTIVE MIN', value: shortNumber(activeMinutes) },
+          ],
+      },
+    },
+  ];
 
-  if (totals.activityCount) {
-    cards.push(insightCard(s, 'Consistency Check', `${totals.activityCount} activities logged. Your Strava grid is lighting up.`, [`Top sport: ${topSport}`, `${totals.activityCount} total activities`]));
-  }
+  const chart = buildChart('fitbit', stats);
+  if (chart) cards.push(chart);
 
-  // Monthly distance chart
-  const monthlyDist = [42, 55, 38, 67, 89, 102, 95, 88, 74, 98, 115, 124];
-  cards.push(chartCard(s, 'Distance Each Month', 'area', monthlyDist, ['J','F','M','A','M','J','J','A','S','O','N','D'], 'km'));
+  const comparison = buildComparison('fitbit', stats, 'You vs Average Month');
+  if (comparison) cards.push(comparison);
 
+  cards.push(buildCommunity('fitbit', 'daily movement', `${shortNumber(totalSteps)} steps`, totalSteps));
   return cards;
 }
 
-function goodreadsCards(stats: ServiceStats): WrappedCard[] {
-  const cards: WrappedCard[] = [];
-  const s = stats;
-  const totals = s.aggregates.totals;
+function buildLastfmCards(stats: ServiceStats, copy?: ServiceCopySuggestions): WrappedCard[] {
+  const artists = stats.aggregates.top_items.find((group) => group.category === 'artists')?.items ?? [];
+  const tracks = stats.aggregates.top_items.find((group) => group.category === 'tracks')?.items ?? [];
+  const topArtist = artists[0]?.name ?? 'No top artist';
+  const sample = stats.aggregates.totals.recentTrackSample ?? tracks.length;
 
-  if (totals.booksRead) {
-    const pages = totals.pagesRead as number || 0;
-    const avgPages = Math.round(pages / (totals.booksRead as number));
-    cards.push(heroStat(s, 'booksRead', `${totals.booksRead}`, 'books read', `~${avgPages} pages each on average`, '📚'));
-  }
+  const cards: WrappedCard[] = [
+    {
+      id: cardId(),
+      type: 'hero_stat',
+      service: 'lastfm',
+      data: {
+        stat: topArtist,
+        value: 'Your most-scrobbled artist',
+        comparison: copy?.heroComparison ?? `${sample} recent tracks showed the same taste all over again.`,
+      },
+    },
+  ];
 
-  // Reading streak / top authors
-  const authorsList = topListCard(s);
-  if (authorsList) {
-    (authorsList.data as Record<string,unknown>).category = 'authors';
-    authorsList.title = 'Your Top Authors';
-    cards.push(authorsList);
-  }
+  const topArtists = buildTopList('lastfm', 'Your Top Artists', artists);
+  if (topArtists) cards.push(topArtists);
 
-  // Insight
-  if (totals.pagesRead) {
-    const pagesPerDay = Math.round((totals.pagesRead as number) / 365);
-    cards.push(insightCard(s, 'Daily Reading', `${pagesPerDay} pages a day keeps the brain engaged. That's ${Math.round((totals.pagesRead as number) / 1800)} years of reading done.`, [`${(totals.pagesRead as number).toLocaleString()} total pages`]));
-  }
+  cards.push({
+    id: cardId(),
+    type: 'insight',
+    service: 'lastfm',
+    data: {
+      headline:
+        copy?.insightHeadline ??
+        `${topArtist} kept coming back because your listening habits clearly know what they like`,
+      supportingData:
+        copy?.insightSupportingData ?? [
+          { label: 'TRACKS', value: String(stats.aggregates.totals.tracksTracked ?? tracks.length) },
+          { label: 'RECENT', value: String(sample) },
+        ],
+    },
+  });
 
+  const chart = buildChart('lastfm', stats);
+  if (chart) cards.push(chart);
+
+  cards.push(buildCommunity('lastfm', 'scrobble depth', `${sample} recent tracks sampled`, sample));
   return cards;
 }
 
-function steamCards(stats: ServiceStats): WrappedCard[] {
-  const cards: WrappedCard[] = [];
-  const s = stats;
-  const totals = s.aggregates.totals;
-  const topGame = s.aggregates.top_items[0]?.items[0]?.name;
+function buildSteamCards(stats: ServiceStats, copy?: ServiceCopySuggestions): WrappedCard[] {
+  const games = stats.aggregates.top_items.find((group) => group.category === 'games')?.items ?? [];
+  const totalHours = stats.aggregates.totals.totalHours ?? 0;
+  const gamesPlayed = stats.aggregates.totals.gamesPlayed ?? 0;
+  const topGame = String(stats.aggregates.streaks.topGame ?? games[0]?.name ?? 'No game');
 
-  if (totals.totalHours) {
-    const days = Math.round((totals.totalHours as number) / 24 * 10) / 10;
-    cards.push(heroStat(s, 'totalHours', `${(totals.totalHours as number).toLocaleString()} hrs`, 'of gaming', `That's ${days} full days in-game`, '🎮'));
-  }
+  const cards: WrappedCard[] = [
+    {
+      id: cardId(),
+      type: 'hero_stat',
+      service: 'steam',
+      data: {
+        stat: shortNumber(totalHours),
+        value: 'Hours played',
+        comparison: copy?.heroComparison ?? `${topGame} led the year across ${gamesPlayed} played games.`,
+      },
+    },
+  ];
 
-  if (topGame) {
-    cards.push(insightCard(s, 'Your Game of the Year', `"${topGame}" dominated your screen time. No judgment.`, [`Top game: ${topGame}`, `${totals.gamesPlayed} games played`]));
-  }
+  const topGames = buildTopList('steam', 'Your Top Games', games);
+  if (topGames) cards.push(topGames);
 
-  // Games bar chart
-  if (s.aggregates.top_items[0]?.items.length) {
-    const gameHours = [342, 287, 156, 98, 67];
-    const gameLabels = s.aggregates.top_items[0].items.slice(0, 5).map(i => i.name.split(' ')[0]);
-    cards.push(chartCard(s, 'Top Games by Hours', 'bar', gameHours, gameLabels, 'hrs'));
-  }
+  cards.push({
+    id: cardId(),
+    type: 'insight',
+    service: 'steam',
+    data: {
+      headline:
+        copy?.insightHeadline ??
+        `${topGame} became your go-to world whenever you had free time`,
+      supportingData:
+        copy?.insightSupportingData ?? [
+          { label: 'PLAYED', value: String(gamesPlayed) },
+          { label: 'OWNED', value: String(stats.aggregates.totals.gamesOwned ?? games.length) },
+        ],
+    },
+  });
 
+  const chart = buildChart('steam', stats);
+  if (chart) cards.push(chart);
+
+  cards.push(buildCommunity('steam', 'playtime', `${shortNumber(totalHours)} hours`, totalHours));
   return cards;
 }
 
-// ── Main Selector ─────────────────────────────────────────────────────────────
+function buildAppleHealthCards(stats: ServiceStats): WrappedCard[] {
+  const totalSteps = stats.aggregates.totals.totalSteps ?? 0;
+  const activeMinutes = stats.aggregates.totals.activeMinutes ?? 0;
+  const sleepMinutes = stats.aggregates.totals.sleepMinutes ?? 0;
 
-export function selectCards(stats: ServiceStats[], maxCards = 15): WrappedCard[] {
-  const cards: WrappedCard[] = [introCard()];
+  const cards: WrappedCard[] = [
+    {
+      id: cardId(),
+      type: 'hero_stat',
+      service: 'apple_health',
+      data: {
+        stat: shortNumber(totalSteps),
+        value: 'Steps tracked',
+        comparison: `${shortNumber(activeMinutes)} active minutes and ${shortNumber(Math.round(sleepMinutes / 60))} hours of sleep rounded out the year.`,
+      },
+    },
+    {
+      id: cardId(),
+      type: 'insight',
+      service: 'apple_health',
+      data: {
+        headline: 'Your HealthKit data stayed on-device while still powering this recap',
+        supportingData: [
+          { label: 'ACTIVE MIN', value: shortNumber(activeMinutes) },
+          { label: 'SLEEP HRS', value: shortNumber(Math.round(sleepMinutes / 60)) },
+        ],
+      },
+    },
+  ];
 
-  const sorted = [...stats].sort((a, b) => scoreStat(b) - scoreStat(a));
+  const chart = buildChart('apple_health', stats);
+  if (chart) cards.push(chart);
 
-  for (const stat of sorted) {
-    if (cards.length >= maxCards) break;
+  cards.push(buildCommunity('apple_health', 'daily activity', `${shortNumber(activeMinutes)} minutes`, activeMinutes));
+  return cards;
+}
 
-    let serviceCards: WrappedCard[] = [];
-    switch (stat.service) {
-      case 'spotify':    serviceCards = spotifyCards(stat);    break;
-      case 'apple_health': serviceCards = healthCards(stat);  break;
-      case 'strava':     serviceCards = stravaCards(stat);     break;
-      case 'goodreads':  serviceCards = goodreadsCards(stat);  break;
-      case 'steam':      serviceCards = steamCards(stat);      break;
-      default: {
-        // Generic cards for unknown services
-        for (const [key, val] of Object.entries(stat.aggregates.totals)) {
-          if (typeof val === 'number' && val > 0) {
-            cards.push(heroStat(stat, key, `${val.toLocaleString()}`, key, undefined));
-            break;
-          }
-        }
-        const list = topListCard(stat);
-        if (list) cards.push(list);
-      }
+const builders: Partial<Record<ServiceId, (stats: ServiceStats, copy?: ServiceCopySuggestions) => WrappedCard[]>> = {
+  spotify: buildSpotifyCards,
+  strava: buildStravaCards,
+  fitbit: buildFitbitCards,
+  lastfm: buildLastfmCards,
+  steam: buildSteamCards,
+  apple_health: buildAppleHealthCards,
+};
+
+function buildShareSummary(stats: ServiceStats[]) {
+  const fragments = stats.map((serviceStats) => {
+    switch (serviceStats.service) {
+      case 'spotify':
+        return `${serviceStats.aggregates.streaks.topArtist ?? 'your top artist'} on repeat`;
+      case 'strava':
+        return `${shortNumber(Math.round(serviceStats.aggregates.totals.totalDistanceKm ?? 0))} km logged`;
+      case 'fitbit':
+      case 'apple_health':
+        return `${shortNumber(serviceStats.aggregates.totals.totalSteps ?? 0)} steps`;
+      case 'lastfm':
+        return `${serviceStats.aggregates.streaks.topArtist ?? 'your top artist'} on top`;
+      case 'steam':
+        return `${shortNumber(serviceStats.aggregates.totals.totalHours ?? 0)} hours played`;
+      default:
+        return serviceStats.service;
     }
-    cards.push(...serviceCards);
-  }
+  });
 
-  // Add community comparison for top 2 data-rich services
-  for (const stat of sorted.slice(0, 2)) {
-    if (cards.length >= maxCards) break;
-    const percentile = Math.floor(Math.random() * 25) + 3; // 3–27%
-    const metric = stat.service.replace('_', ' ');
-    const values = Object.values(stat.aggregates.totals);
-    const sampleValue = values.find(v => typeof v === 'number') as number;
-    cards.push(communityCard(stat, metric, formatValue(sampleValue, metric), percentile));
-  }
+  return fragments.filter(Boolean).slice(0, 3).join(' · ');
+}
 
-  // Comparison card (this year vs last)
-  for (const stat of sorted.slice(0, 1)) {
-    if (cards.length >= maxCards) break;
-    const totals = stat.aggregates.totals;
-    const comparisons = stat.aggregates.comparisons;
-    if (comparisons.length > 0) {
-      const c = comparisons[0];
-      cards.push(comparisonCard(stat, 'This Year vs Last Year', '2024', c.previous, '2025', c.current, ''));
-    } else {
-      // Synthesize a comparison
-      for (const key of Object.keys(totals)) {
-        const val = totals[key];
-        if (typeof val === 'number' && val > 0) {
-          const lastYear = Math.round(val * (0.75 + Math.random() * 0.15));
-          cards.push(comparisonCard(stat, 'This Year vs Last Year', 'Last Year', lastYear, 'This Year', val, ''));
-          break;
-        }
-      }
+export function selectCards(
+  stats: ServiceStats[],
+  copyByService: Partial<Record<ServiceId, ServiceCopySuggestions>> = {},
+  maxCards = 15,
+): WrappedCard[] {
+  const cards: WrappedCard[] = [];
+
+  for (const serviceStats of stats) {
+    const builder = builders[serviceStats.service];
+    if (!builder) continue;
+
+    const built = builder(serviceStats, copyByService[serviceStats.service]);
+    for (const card of built) {
+      if (cards.length >= maxCards - 1) break;
+      cards.push(card);
     }
+    if (cards.length >= maxCards - 1) break;
   }
 
-  // Share card (always last)
-  if (sorted.length > 0) {
-    const top = sorted[0];
-    const totals = top.aggregates.totals;
-    const firstKey = Object.keys(totals).find(k => typeof totals[k] === 'number');
-    const statText = firstKey ? `${formatValue(totals[firstKey] as number, firstKey)} ${firstKey.replace(/([A-Z])/g, ' $1').trim()}` : 'An incredible year';
-    cards.push(shareCard(top, statText));
+  if (stats.length > 0) {
+    const shareHeadline =
+      copyByService[stats[0].service]?.shareHeadline ??
+      `My ${new Date().getFullYear()} Wrapped.`;
+
+    cards.push({
+      id: cardId(),
+      type: 'share',
+      service: 'all',
+      data: {
+        stat: buildShareSummary(stats),
+        headline: shareHeadline,
+      },
+    });
   }
 
   return cards.slice(0, maxCards);
-}
-
-function formatValue(val: number, key: string): string {
-  if (val >= 1_000_000) return (val / 1_000_000).toFixed(1) + 'M';
-  if (val >= 1_000) return (val / 1_000).toFixed(1) + 'K';
-  return val.toLocaleString();
 }

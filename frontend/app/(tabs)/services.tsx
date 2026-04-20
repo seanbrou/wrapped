@@ -185,17 +185,23 @@ export default function ServicesScreen() {
     Haptics.selectionAsync();
     const wasLinked = connected.has(svc.id);
     setBusy(svc.id);
-    await new Promise(r => setTimeout(r, 700));
-    setConnected(prev => {
-      const next = new Set(prev);
-      if (next.has(svc.id)) next.delete(svc.id);
-      else next.add(svc.id);
-      return next;
-    });
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    setBusy(null);
-    if (!wasLinked) {
-      showDockWithTimer();
+    try {
+      if (wasLinked) {
+        await api.revokeService(svc.id);
+      } else {
+        await api.connectService(svc.id);
+      }
+
+      const data = await api.listServices();
+      setConnected(new Set(data.filter(s => s.isConnected).map(s => s.id)));
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      if (!wasLinked) {
+        showDockWithTimer();
+      }
+    } catch {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    } finally {
+      setBusy(null);
     }
   }
 

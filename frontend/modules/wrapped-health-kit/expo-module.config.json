@@ -1,0 +1,9 @@
+{
+  "platforms": ["apple", "android", "web"],
+  "apple": {
+    "modules": ["WrappedHealthKitModule"]
+  },
+  "android": {
+    "modules": ["expo.modules.wrappedhealthkit.WrappedHealthKitModule"]
+  }
+}

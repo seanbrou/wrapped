@@ -1,6 +1,9 @@
-import crypto from 'crypto';
+import 'dotenv/config';
 
-const APP_SECRET = process.env.APP_SECRET || 'wrapped-dev-secret-change-in-prod';
+import crypto from 'crypto';
+import { requireConfiguredSecret } from './config.js';
+
+const APP_SECRET = requireConfiguredSecret();
 
 /**
  * Encrypt a token before storing in DB.

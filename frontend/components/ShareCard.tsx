@@ -10,10 +10,11 @@ interface Props {
   headline: string;
   service: string;
   accent: StoryAccent;
+  onShare?: () => Promise<void> | void;
 }
 
 // Poster-style closer. Editorial lockup + share button.
-export function ShareCard({ stat, headline, accent }: Props) {
+export function ShareCard({ stat, headline, accent, onShare }: Props) {
   const mark = useRef(new Animated.Value(0)).current;
   const title = useRef(new Animated.Value(0)).current;
   const detail = useRef(new Animated.Value(0)).current;
@@ -41,6 +42,10 @@ export function ShareCard({ stat, headline, accent }: Props) {
   async function share() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     try {
+      if (onShare) {
+        await onShare();
+        return;
+      }
       await Share.share({
         message: `${headline}\n${stat}\nMade with Wrapped.`,
       });

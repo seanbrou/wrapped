@@ -7,18 +7,20 @@ import {
   Animated,
   Easing,
   Dimensions,
-  Share,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { colors, type, space, radii, motion } from '../../lib/theme';
+import { api } from '../../lib/api';
 import Confetti from '../../components/Confetti';
 
 const { width: W, height: H } = Dimensions.get('window');
 
 export default function End() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ id?: string }>();
+  const captureTargetRef = useRef<any>(null);
 
   const mark = useRef(new Animated.Value(0)).current;
   const year = useRef(new Animated.Value(0)).current;
@@ -55,14 +57,14 @@ export default function End() {
         useNativeDriver: true,
       }),
     ]).start();
-  }, []);
+  }, [actions, mark, tag, year, yearScale]);
 
   async function share() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     try {
-      await Share.share({
-        message: 'My 2026, wrapped. → wrapped.app',
-      });
+      if (typeof params.id === 'string') {
+        await api.shareWrapped(params.id, captureTargetRef);
+      }
     } catch {}
   }
 
@@ -77,7 +79,7 @@ export default function End() {
   }
 
   return (
-    <SafeAreaView style={styles.screen} edges={['top', 'bottom']}>
+    <SafeAreaView ref={captureTargetRef} style={styles.screen} edges={['top', 'bottom']}>
       <Confetti mode="burst" count={40} seed={42} />
       <View style={styles.body}>
         <Animated.View

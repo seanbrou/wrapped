@@ -1,269 +1,426 @@
-import type { FastifyInstance } from 'fastify';
-import { spotifyPlugin, stravaPlugin, goodreadsPlugin, steamPlugin, appleHealthPlugin } from '../plugins/index.js';
-import { connectedServices, users } from '../db/index.js';
-import { encryptToken, decryptToken } from '../services/anonymizer.js';
+import crypto from 'node:crypto';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import { aggregatedStats, connectedServices, oauthRequests, syncLogs, users } from '../db/index.js';
+import { getServiceAdapter, serviceAdapters } from '../plugins/index.js';
+import { decryptToken, encryptToken } from '../services/anonymizer.js';
+import { appConfig, requirePublicApiBaseUrl, validateRedirectUri } from '../services/config.js';
+import { requireAuth } from '../services/requestAuth.js';
+import { issueRefreshToken, signAccessToken, verifyRefreshToken } from '../services/session.js';
+import type { ServiceId } from '../types/index.js';
 
-const PLUGINS = {
-  spotify: spotifyPlugin,
-  strava: stravaPlugin,
-  goodreads: goodreadsPlugin,
-  steam: steamPlugin,
-  apple_health: appleHealthPlugin,
-} as const;
+const publicApiBaseUrl = requirePublicApiBaseUrl();
 
-type ServiceId = keyof typeof PLUGINS;
-
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
-function mobileRedirectUrl(service: string, success = true, error?: string): string {
-  const params = new URLSearchParams({ service });
-  if (success) params.set('status', 'connected');
-  if (error) params.set('error', error);
-  // Custom URI scheme for expo-web-browser — the app registers wrapped://
-  return `wrapped://connected?${params}`;
+function callbackBaseUrlFor(service: string) {
+  return `${publicApiBaseUrl}/api/oauth/${service}/callback`;
 }
 
-function htmlRedirect(url: string, service: string): string {
+let activeSyncs = 0;
+const pendingSyncWaiters: Array<() => void> = [];
+
+async function acquireSyncSlot() {
+  if (activeSyncs < appConfig.maxConcurrentSyncs) {
+    activeSyncs += 1;
+    return;
+  }
+
+  await new Promise<void>((resolve) => {
+    pendingSyncWaiters.push(() => {
+      activeSyncs += 1;
+      resolve();
+    });
+  });
+}
+
+function releaseSyncSlot() {
+  activeSyncs = Math.max(0, activeSyncs - 1);
+  const next = pendingSyncWaiters.shift();
+  if (next) next();
+}
+
+function appendParams(url: string, params: Record<string, string>) {
+  const target = new URL(url);
+  for (const [key, value] of Object.entries(params)) {
+    target.searchParams.set(key, value);
+  }
+  return target.toString();
+}
+
+function htmlRedirect(url: string, message: string) {
   return `<!DOCTYPE html>
 <html>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Wrapped — Connecting ${service}...</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body {
-      background: #0A0A0F;
-      color: #fff;
-      font-family: -apple-system, system-ui, sans-serif;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      min-height: 100vh;
-      flex-direction: column;
-      gap: 16px;
-    }
-    .logo { font-size: 32px; font-weight: 800; background: linear-gradient(135deg, #6C5CE7, #00D4FF); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-    .status { color: #8A8A9A; font-size: 14px; }
-    .spinner { width: 32px; height: 32px; border: 3px solid #1E1E2E; border-top-color: #6C5CE7; border-radius: 50%; animation: spin 1s linear infinite; }
-    @keyframes spin { to { transform: rotate(360deg); } }
-  </style>
-</head>
-<body>
-  <div class="logo">Wrapped</div>
-  <div class="spinner"></div>
-  <div class="status">Connecting to ${service}...</div>
-  <script>
-    // Try native app redirect first, fall back to close
-    window.location.replace(${JSON.stringify(url)});
-    // Fallback after 500ms if native app didn't handle it (e.g., desktop browsers)
-    setTimeout(function() {
-      // Some browsers block top-level redirect to custom schemes.
-      // Show a manual close message.
-      document.querySelector('.status').textContent = 'Connection complete! You can close this tab.';
-      document.querySelector('.spinner').style.display = 'none';
-    }, 1500);
-  </script>
-</body>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Wrapped</title>
+    <style>
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        background: #0A0A0F;
+        color: white;
+        font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui, sans-serif;
+      }
+      .shell {
+        display: grid;
+        gap: 14px;
+        justify-items: center;
+      }
+      .spinner {
+        width: 32px;
+        height: 32px;
+        border: 3px solid rgba(255,255,255,0.15);
+        border-top-color: white;
+        border-radius: 999px;
+        animation: spin 1s linear infinite;
+      }
+      @keyframes spin {
+        to { transform: rotate(360deg); }
+      }
+      p { margin: 0; opacity: 0.8; }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <div class="spinner"></div>
+      <p>${message}</p>
+    </div>
+    <script>
+      window.location.replace(${JSON.stringify(url)});
+      setTimeout(function () {
+        document.querySelector('.spinner').style.display = 'none';
+        document.querySelector('p').textContent = 'You can close this tab and return to Wrapped.';
+      }, 1500);
+    </script>
+  </body>
 </html>`;
 }
 
-// ── Routes ───────────────────────────────────────────────────────────────────
+function defaultAppRedirect(service: string, error?: string) {
+  const target = new URL('wrapped://connected');
+  target.searchParams.set('service', service);
+  target.searchParams.set('status', error ? 'error' : 'connected');
+  if (error) target.searchParams.set('error', error);
+  return target.toString();
+}
 
 export async function authRoutes(fastify: FastifyInstance) {
-
-  // GET /api/services — list all services with connection status
-  fastify.get('/services', async (request) => {
-    const userId = (request.headers['x-user-id'] as string) || 'demo-user';
-    const services = await Promise.all(
-      Object.entries(PLUGINS).map(async ([id, plugin]) => {
-        const connected = connectedServices.get(userId, id);
-        return {
-          id,
-          name: plugin.name,
-          logoUrl: plugin.logoUrl,
-          isConnected: !!connected,
-          lastSyncedAt: connected?.last_synced_at || null,
-        };
-      })
-    );
-    return { data: services };
-  });
-
-  // GET /api/auth/:service/authorize — start OAuth flow
-  fastify.get<{ Params: { service: string } }>('/auth/:service/authorize', async (request, reply) => {
-    const { service } = request.params;
-    const plugin = PLUGINS[service as ServiceId];
-
-    if (!plugin) {
-      return reply.status(404).send({ error: `Unknown service: ${service}` });
+  fastify.post<{
+    Body: { installId: string; platform?: string | null }
+  }>('/session/bootstrap', async (request, reply) => {
+    const installId = request.body?.installId?.trim();
+    if (!installId) {
+      return reply.status(400).send({ error: 'installId is required' });
     }
 
-    const state = Math.random().toString(36).substring(2, 18);
-    const url = plugin.getAuthorizeUrl(state);
+    const user = await users.getOrCreateByInstall(installId, request.body.platform);
+    const access = await signAccessToken(user.id, installId);
+    const refresh = await issueRefreshToken(user.id, installId);
 
     return {
       data: {
-        url,
-        state,
-        redirectUrl: mobileRedirectUrl(service, true),
+        userId: user.id,
+        installId,
+        accessToken: access.token,
+        accessTokenExpiresAt: access.expiresAt,
+        refreshToken: refresh.token,
+        refreshTokenExpiresAt: refresh.expiresAt,
       },
     };
   });
 
-  // GET /api/auth/:service/callback — OAuth callback (handles both code & token)
-  // Supports: ?code=... (standard) or ?access_token=... (implicit/expo) or ?error=...
-  fastify.get<{ Params: { service: string } }>('/auth/:service/callback', async (request, reply) => {
-    const { service } = request.params;
-    const query = request.query as Record<string, string | undefined>;
-    const { code, access_token: accessToken, error, state } = query;
+  fastify.post<{
+    Body: { installId: string; refreshToken: string }
+  }>('/session/refresh', async (request, reply) => {
+    const installId = request.body?.installId?.trim();
+    const refreshToken = request.body?.refreshToken?.trim();
 
-    const plugin = PLUGINS[service as ServiceId];
-    if (!plugin) {
-      return reply.status(404).send({ error: `Unknown service: ${service}` });
+    if (!installId || !refreshToken) {
+      return reply.status(400).send({ error: 'installId and refreshToken are required' });
     }
 
-    // OAuth error from provider
-    if (error) {
-      console.error(`[auth] ${service} OAuth error:`, error);
-      const html = htmlRedirect(mobileRedirectUrl(service, false, error), service);
-      return reply.type('text/html').send(html);
+    const refreshSession = await verifyRefreshToken(refreshToken);
+    if (!refreshSession || refreshSession.install_id !== installId) {
+      return reply.status(401).send({ error: 'Refresh session expired' });
+    }
+
+    const access = await signAccessToken(refreshSession.user_id, installId);
+    const refresh = await issueRefreshToken(refreshSession.user_id, installId);
+
+    return {
+      data: {
+        userId: refreshSession.user_id,
+        installId,
+        accessToken: access.token,
+        accessTokenExpiresAt: access.expiresAt,
+        refreshToken: refresh.token,
+        refreshTokenExpiresAt: refresh.expiresAt,
+      },
+    };
+  });
+
+  fastify.get('/services', async (request, reply) => {
+    const auth = await requireAuth(request, reply);
+    if (!auth) return;
+
+    const connected = new Map(
+      (await connectedServices.list(auth.userId)).map((service) => [service.service, service]),
+    );
+
+    const services = Object.values(serviceAdapters).map((service) => {
+      const connection = connected.get(service.id);
+      return {
+        id: service.id,
+        name: service.name,
+        logoUrl: service.logoUrl,
+        isConnected: Boolean(connection),
+        lastSyncedAt: connection?.lastSyncedAt ?? null,
+        connectionKind: service.connectionKind,
+        isAvailable: service.supported,
+        localOnly: Boolean(service.localOnly),
+        disabledReason: service.disabledReason ?? null,
+      };
+    });
+
+    return { data: services };
+  });
+
+  fastify.post<{
+    Params: { service: string };
+    Body: { redirectUri?: string }
+  }>('/services/:service/connect/start', async (request, reply) => {
+    const auth = await requireAuth(request, reply);
+    if (!auth) return;
+
+    const adapter = getServiceAdapter(request.params.service);
+    if (!adapter) {
+      return reply.status(404).send({ error: `Unknown service: ${request.params.service}` });
+    }
+
+    if (adapter.localOnly) {
+      return {
+        data: {
+          service: adapter.id,
+          localOnly: true,
+        },
+      };
+    }
+
+    if (!adapter.supported || !adapter.connect) {
+      return reply.status(409).send({
+        error: adapter.disabledReason ?? 'This integration is not available in v1.',
+      });
+    }
+
+    await oauthRequests.cleanupExpired();
+
+    const requestId = crypto.randomUUID();
+    const callbackBaseUrl = callbackBaseUrlFor(adapter.id);
+    const redirectUri = request.body?.redirectUri?.trim() || defaultAppRedirect(adapter.id);
+    if (!validateRedirectUri(redirectUri)) {
+      return reply.status(400).send({ error: 'redirectUri is not allowed' });
+    }
+
+    const start = await adapter.connect.start({
+      requestId,
+      redirectUri,
+      callbackBaseUrl,
+    });
+
+    const lookupKey = start.lookupKey ?? requestId;
+    await oauthRequests.create({
+      lookupKey,
+      userId: auth.userId,
+      installId: auth.installId,
+      service: adapter.id,
+      redirectUri,
+      metadata: start.metadata,
+      expiresAtIso: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+    });
+
+    return {
+      data: {
+        service: adapter.id,
+        url: start.url,
+        redirectUri,
+        localOnly: false,
+      },
+    };
+  });
+
+  fastify.get<{ Params: { service: string } }>('/oauth/:service/callback', async (request, reply) => {
+    const adapter = getServiceAdapter(request.params.service);
+    if (!adapter?.connect) {
+      return reply.status(404).send({ error: `Unknown service: ${request.params.service}` });
+    }
+
+    const query = request.query as Record<string, string | undefined>;
+    const lookupKey = query.state || query.token;
+    const oauthRequest = lookupKey
+      ? await oauthRequests.findByLookup(adapter.id, lookupKey)
+      : null;
+
+    if (query.error) {
+      const redirectUri = oauthRequest?.redirectUri ?? defaultAppRedirect(adapter.id, query.error);
+      if (oauthRequest) await oauthRequests.delete(oauthRequest.id);
+      return reply.type('text/html').send(
+        htmlRedirect(
+          appendParams(redirectUri, {
+            service: adapter.id,
+            status: 'error',
+            error: query.error,
+          }),
+          'Connection canceled.',
+        ),
+      );
+    }
+
+    if (!oauthRequest) {
+      return reply.type('text/html').send(
+        htmlRedirect(defaultAppRedirect(adapter.id, 'expired_state'), 'Connection expired.'),
+      );
     }
 
     try {
-      let tokens: { access_token: string; refresh_token?: string; expires_at?: number };
+      const callbackBaseUrl = callbackBaseUrlFor(adapter.id);
+      const tokens = await adapter.connect.finish({
+        lookupKey: oauthRequest.lookupKey,
+        redirectUri: oauthRequest.redirectUri,
+        callbackBaseUrl,
+        params: query,
+        metadata: oauthRequest.metadata,
+      });
 
-      if (accessToken) {
-        // Implicit flow (some providers, Expo Web Browser)
-        tokens = { access_token: accessToken };
-      } else if (code) {
-        // Standard authorization code flow
-        tokens = await plugin.exchangeCode(code);
-      } else {
-        return reply.status(400).send({ error: 'Missing authorization code or token' });
-      }
+      await connectedServices.upsert({
+        userId: oauthRequest.userId,
+        service: adapter.id,
+        externalAccountId: tokens.externalAccountId ?? null,
+        accessTokenEncrypted: tokens.accessToken ? encryptToken(tokens.accessToken) : null,
+        refreshTokenEncrypted: tokens.refreshToken ? encryptToken(tokens.refreshToken) : null,
+        tokenType: tokens.tokenType ?? null,
+        scope: tokens.scope ?? null,
+        expiresAt: tokens.expiresAt ?? null,
+        metadata: tokens.metadata ?? {},
+      });
+      await oauthRequests.delete(oauthRequest.id);
 
-      const userId = 'demo-user'; // In production, derive from state + session cookie
-      users.getOrCreate(userId);
+      const redirectUri = appendParams(oauthRequest.redirectUri, {
+        service: adapter.id,
+        status: 'connected',
+      });
 
-      const id = crypto.randomUUID();
-      const encryptedAccess = encryptToken(tokens.access_token);
-      const encryptedRefresh = tokens.refresh_token ? encryptToken(tokens.refresh_token) : null;
-
-      connectedServices.upsert(
-        id,
-        userId,
-        plugin.id,
-        encryptedAccess,
-        encryptedRefresh,
-        tokens.expires_at || null
-      );
-
-      console.log(`[auth] ${service} connected for user ${userId}`);
-
-      // Return HTML that redirects to the mobile app
-      const redirectUrl = mobileRedirectUrl(service, true);
-      const html = htmlRedirect(redirectUrl, service);
-      return reply.type('text/html').send(html);
-    } catch (err) {
-      console.error(`[auth] ${service} callback error:`, err);
-      const html = htmlRedirect(mobileRedirectUrl(service, false, 'oauth_failed'), service);
-      return reply.type('text/html').send(html);
+      return reply.type('text/html').send(htmlRedirect(redirectUri, 'Connection complete.'));
+    } catch (error) {
+      await oauthRequests.delete(oauthRequest.id);
+      const redirectUri = appendParams(oauthRequest.redirectUri, {
+        service: adapter.id,
+        status: 'error',
+        error: 'oauth_failed',
+      });
+      return reply.type('text/html').send(htmlRedirect(redirectUri, 'Connection failed.'));
     }
   });
 
-  // DELETE /api/services/:service — revoke connection
   fastify.delete<{ Params: { service: string } }>('/services/:service', async (request, reply) => {
-    const { service } = request.params;
-    const userId = (request.headers['x-user-id'] as string) || 'demo-user';
+    const auth = await requireAuth(request, reply);
+    if (!auth) return;
 
-    connectedServices.revoke(userId, service);
-    console.log(`[auth] ${service} revoked for user ${userId}`);
-
-    return { data: { revoked: true, service } };
-  });
-
-  // POST /api/services/:service/sync — fetch and store anonymized data
-  fastify.post<{ Params: { service: string } }>('/services/:service/sync', async (request, reply) => {
-    const { service } = request.params;
-    const userId = (request.headers['x-user-id'] as string) || 'demo-user';
-    const plugin = PLUGINS[service as ServiceId];
-
-    if (!plugin) {
-      return reply.status(404).send({ error: `Unknown service: ${service}` });
+    const adapter = getServiceAdapter(request.params.service);
+    if (!adapter) {
+      return reply.status(404).send({ error: `Unknown service: ${request.params.service}` });
     }
 
-    const connected = connectedServices.get(userId, service);
-    if (!connected) {
+    await connectedServices.revoke(auth.userId, adapter.id);
+    return { data: { revoked: true, service: adapter.id } };
+  });
+
+  fastify.post<{
+    Params: { service: string };
+    Body: { periodStart?: string; periodEnd?: string }
+  }>('/services/:service/sync', async (request, reply) => {
+    const auth = await requireAuth(request, reply);
+    if (!auth) return;
+
+    const adapter = getServiceAdapter(request.params.service);
+    if (!adapter?.sync) {
+      return reply.status(409).send({ error: 'This service cannot be synced from the backend.' });
+    }
+
+    const connection = await connectedServices.get(auth.userId, adapter.id);
+    if (!connection) {
       return reply.status(400).send({ error: 'Service not connected' });
     }
 
+    let accessToken = connection.accessTokenEncrypted ? decryptToken(connection.accessTokenEncrypted) : null;
+    let refreshToken = connection.refreshTokenEncrypted ? decryptToken(connection.refreshTokenEncrypted) : null;
+
+    if (
+      adapter.refresh &&
+      refreshToken &&
+      connection.expiresAt &&
+      connection.expiresAt <= Date.now() + 60_000
+    ) {
+      const refreshed = await adapter.refresh(refreshToken, connection.metadata);
+      accessToken = refreshed.accessToken;
+      refreshToken = refreshed.refreshToken ?? refreshToken;
+      await connectedServices.upsert({
+        userId: auth.userId,
+        service: adapter.id,
+        externalAccountId: refreshed.externalAccountId ?? connection.externalAccountId,
+        accessTokenEncrypted: accessToken ? encryptToken(accessToken) : null,
+        refreshTokenEncrypted: refreshToken ? encryptToken(refreshToken) : null,
+        tokenType: refreshed.tokenType ?? connection.tokenType,
+        scope: refreshed.scope ?? connection.scope,
+        expiresAt: refreshed.expiresAt ?? connection.expiresAt,
+        metadata: refreshed.metadata ?? connection.metadata,
+      });
+    }
+
+    const periodEnd = request.body?.periodEnd ? new Date(request.body.periodEnd) : new Date();
+    const periodStart = request.body?.periodStart
+      ? new Date(request.body.periodStart)
+      : new Date(periodEnd.getFullYear() - 1, periodEnd.getMonth(), periodEnd.getDate());
+
+    await acquireSyncSlot();
+
     try {
-      const accessToken = decryptToken(connected.access_token_encrypted);
-      const now = new Date();
-      const yearAgo = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate());
+      const stats = await adapter.sync({
+        accessToken,
+        refreshToken,
+        externalAccountId: connection.externalAccountId,
+        connectionMetadata: connection.metadata,
+        periodStart,
+        periodEnd,
+      });
 
-      console.log(`[sync] Fetching ${service} data for user ${userId}...`);
-      const rawData = await plugin.fetchUserData(accessToken, yearAgo, now);
-      const stats = plugin.mapToStats(rawData);
-      stats.period = {
-        start: yearAgo.toISOString().split('T')[0],
-        end: now.toISOString().split('T')[0],
-      };
+      await aggregatedStats.upsert({
+        userId: auth.userId,
+        service: adapter.id,
+        periodStart: stats.period.start,
+        periodEnd: stats.period.end,
+        data: stats.aggregates,
+      });
+      await connectedServices.markSynced(auth.userId, adapter.id);
+      await syncLogs.create({
+        userId: auth.userId,
+        service: adapter.id,
+        status: 'success',
+        periodStart: stats.period.start,
+        periodEnd: stats.period.end,
+      });
 
-      const { aggregatedStats } = await import('../db/index.js');
-      aggregatedStats.upsert(
-        crypto.randomUUID(),
-        userId,
-        service,
-        stats.period.start,
-        stats.period.end,
-        stats.aggregates
-      );
-
-      console.log(`[sync] ${service} synced successfully for user ${userId}`);
       return { data: { synced: true, stats } };
-    } catch (err) {
-      console.error(`[sync] ${service} error:`, err);
-      return reply.status(500).send({ error: 'Sync failed — token may be expired' });
-    }
-  });
-
-  // POST /api/auth/token/refresh — refresh an expired token
-  fastify.post<{ Params: { service: string } }>('/auth/:service/refresh', async (request, reply) => {
-    const { service } = request.params;
-    const userId = (request.headers['x-user-id'] as string) || 'demo-user';
-    const plugin = PLUGINS[service as ServiceId];
-
-    if (!plugin) {
-      return reply.status(404).send({ error: `Unknown service: ${service}` });
-    }
-
-    const connected = connectedServices.get(userId, service);
-    if (!connected?.refresh_token_encrypted) {
-      return reply.status(400).send({ error: 'No refresh token available' });
-    }
-
-    try {
-      const refreshToken = decryptToken(connected.refresh_token_encrypted);
-      const tokens = await plugin.refreshToken(refreshToken);
-
-      const encryptedAccess = encryptToken(tokens.access_token);
-      const encryptedRefresh = tokens.refresh_token ? encryptToken(tokens.refresh_token) : null;
-
-      connectedServices.upsert(
-        connected.id,
-        userId,
-        service,
-        encryptedAccess,
-        encryptedRefresh,
-        tokens.expires_at || null
-      );
-
-      return { data: { refreshed: true } };
-    } catch (err) {
-      console.error(`[refresh] ${service} error:`, err);
-      return reply.status(401).send({ error: 'Refresh failed — please reconnect' });
+    } catch (error) {
+      await syncLogs.create({
+        userId: auth.userId,
+        service: adapter.id,
+        status: 'error',
+        message: String(error),
+      });
+      return reply.status(500).send({ error: `Failed to sync ${adapter.name}` });
+    } finally {
+      releaseSyncSlot();
     }
   });
 }

@@ -46,16 +46,14 @@ export default function Wizard() {
   useEffect(() => {
     api.listServices().then(list => {
       const ids = list.filter(s => s.isConnected).map(s => s.id);
-      // Demo fallback: treat all as connected if none stored yet
-      const use = ids.length > 0 ? ids : SERVICE_CONFIGS.map(s => s.id);
-      setConnectedIds(use);
+      setConnectedIds(ids);
 
       if (templateId) {
         const t = TEMPLATES.find(x => x.id === templateId);
         if (t) {
           const preselect = t.services.length > 0
-            ? t.services.filter(s => use.includes(s))
-            : use;
+            ? t.services.filter(s => ids.includes(s))
+            : ids;
           setSelected(preselect);
           // Skip straight to apps step so the user can confirm
           setStep(1);

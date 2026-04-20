@@ -1,195 +1,369 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { MOCK_WRAPPED } from './mockData';
+import * as AuthSession from 'expo-auth-session';
+import * as Linking from 'expo-linking';
+import * as WebBrowser from 'expo-web-browser';
+import { SERVICE_CONFIGS } from './theme';
+import { connectAppleHealth, revokeAppleHealth, syncAppleHealth } from './appleHealth';
+import {
+  deleteAllLocalData,
+  deleteRecap as deleteLocalRecap,
+  getAggregate,
+  getWrappedSession,
+  listCachedServices,
+  listLatestAggregates,
+  listRecapSummaries,
+  saveAggregate,
+  saveSyncLog,
+  saveWrappedSession,
+  updateRecapCardCounts,
+  upsertServices,
+} from './localStore';
+import { getApiBaseUrl } from './runtime';
+import { clearSession, ensureSession } from './session';
+import { shareWrappedCapture } from './share';
+import type { CardType, RecapSummary, ServiceInfo, WrappedCard, WrappedData } from './types';
 
-export interface ServiceInfo {
-  id: string;
-  name: string;
-  logoUrl: string;
-  isConnected: boolean;
-  lastSyncedAt?: string | null;
-  color?: string;
-}
+WebBrowser.maybeCompleteAuthSession();
 
-export type CardType = 'hero_stat' | 'top_list' | 'insight' | 'chart' | 'community' | 'comparison' | 'share';
+export type { CardType, RecapSummary, ServiceInfo, WrappedCard, WrappedData } from './types';
 
-export interface WrappedCard {
-  type: CardType | string;
-  service: string;
-  data: Record<string, any>;
-}
+type WrappedGenerationOptions = {
+  templateId?: string;
+  templateName?: string;
+  period?: string;
+  accentKey?: string;
+};
 
-export interface WrappedData {
-  sessionId: string;
-  year?: number;
-  services?: string[];
-  cards: WrappedCard[];
-  createdAt?: string;
-}
+function resolveRange(period = 'year') {
+  const end = new Date();
+  const start = new Date(end);
 
-// Lightweight recap summary used for home history list
-export interface RecapSummary {
-  id: string;
-  templateId: string;
-  templateName: string;
-  services: string[];
-  period: string;
-  cardCount: number;
-  createdAt: string;  // ISO
-  accentKey: string;
-}
-
-const STORAGE_KEYS = {
-  services: '@wrapped_services',
-  recaps:   '@wrapped_recaps',
-} as const;
-
-class WrappedAPI {
-  private useMock = true;
-
-  async listServices(): Promise<ServiceInfo[]> {
-    if (this.useMock) {
-      const stored = await AsyncStorage.getItem(STORAGE_KEYS.services);
-      return stored ? JSON.parse(stored) : [];
-    }
-    const res = await fetch('http://localhost:3000/api/services', {
-      headers: { 'x-user-id': 'demo-user' },
-    });
-    return res.json();
+  if (period === '6months') {
+    start.setMonth(start.getMonth() - 6);
+  } else if (period === 'all') {
+    start.setFullYear(start.getFullYear() - 5);
+  } else {
+    start.setFullYear(start.getFullYear() - 1);
   }
 
-  async setConnected(serviceIds: string[]): Promise<void> {
-    if (!this.useMock) return;
-    const records: ServiceInfo[] = serviceIds.map(id => ({
-      id,
-      name: id.replace('_', ' '),
-      logoUrl: '',
-      isConnected: true,
-      lastSyncedAt: new Date().toISOString(),
-    }));
-    await AsyncStorage.setItem(STORAGE_KEYS.services, JSON.stringify(records));
+  return {
+    periodStart: start.toISOString().slice(0, 10),
+    periodEnd: end.toISOString().slice(0, 10),
+  };
+}
+
+function buildDefaultServiceMap() {
+  return new Map<string, ServiceInfo>(
+    SERVICE_CONFIGS.map((service) => [
+      service.id,
+      {
+        id: service.id,
+        name: service.name,
+        logoUrl: service.logoUri,
+        isConnected: false,
+        color: service.color,
+        connectionKind: service.authKind,
+        isAvailable: service.id !== 'goodreads' && service.id !== 'youtube',
+        localOnly: service.id === 'apple_health',
+        disabledReason:
+          service.id === 'goodreads'
+            ? 'Goodreads public API access is deprecated for new integrations.'
+            : service.id === 'youtube'
+              ? 'Watch-history recaps are not available from the official YouTube API.'
+              : null,
+      },
+    ]),
+  );
+}
+
+function sortServices(services: ServiceInfo[]) {
+  const order = new Map(SERVICE_CONFIGS.map((service, index) => [service.id, index]));
+  return [...services].sort((left, right) => (order.get(left.id) ?? 999) - (order.get(right.id) ?? 999));
+}
+
+function mergeServices(...sources: ServiceInfo[][]) {
+  const merged = buildDefaultServiceMap();
+  for (const source of sources) {
+    for (const service of source) {
+      const existing = merged.get(service.id);
+      merged.set(service.id, {
+        ...existing,
+        ...service,
+        color: existing?.color ?? service.color,
+      });
+    }
+  }
+  return sortServices([...merged.values()]);
+}
+
+class WrappedAPI {
+  private async request<T>(path: string, init: RequestInit = {}, retry = true): Promise<T> {
+    const session = await ensureSession();
+    const headers = new Headers(init.headers);
+    headers.set('Authorization', `Bearer ${session.accessToken}`);
+    if (!headers.has('Content-Type') && init.body) {
+      headers.set('Content-Type', 'application/json');
+    }
+
+    const response = await fetch(`${getApiBaseUrl()}${path}`, {
+      ...init,
+      headers,
+    });
+
+    if (response.status === 401 && retry) {
+      await ensureSession(true);
+      return this.request<T>(path, init, false);
+    }
+
+    const payload = (await response.json().catch(() => null)) as { data?: T; error?: string } | null;
+    if (!response.ok) {
+      throw new Error(payload?.error ?? `Request failed with ${response.status}`);
+    }
+
+    return (payload?.data ?? payload) as T;
+  }
+
+  async listServices(): Promise<ServiceInfo[]> {
+    try {
+      const remote = await this.request<ServiceInfo[]>('/api/services');
+      const services = mergeServices(remote);
+      await upsertServices(services);
+      return services;
+    } catch {
+      const cached = await listCachedServices();
+      const services = mergeServices(cached);
+      return services;
+    }
   }
 
   async connectService(serviceId: string): Promise<ServiceInfo> {
-    if (this.useMock) {
-      const list = await this.listServices();
-      const filtered = list.filter(s => s.id !== serviceId);
-      const record: ServiceInfo = {
-        id: serviceId,
-        name: serviceId.replace('_', ' '),
-        logoUrl: '',
-        isConnected: true,
-        lastSyncedAt: new Date().toISOString(),
-      };
-      await AsyncStorage.setItem(
-        STORAGE_KEYS.services,
-        JSON.stringify([...filtered, record]),
-      );
-      return record;
+    if (serviceId === 'apple_health') {
+      const result = await connectAppleHealth();
+      const services = mergeServices(await listCachedServices(), [
+        {
+          id: 'apple_health',
+          name: 'Apple Health',
+          logoUrl: buildDefaultServiceMap().get('apple_health')?.logoUrl ?? '',
+          isConnected: result.connected,
+          lastSyncedAt: result.lastSyncedAt,
+          color: buildDefaultServiceMap().get('apple_health')?.color,
+          connectionKind: 'healthkit',
+          isAvailable: true,
+          localOnly: true,
+        },
+      ]);
+      await upsertServices(services);
+      return services.find((service) => service.id === serviceId)!;
     }
-    const res = await fetch(`http://localhost:3000/api/auth/${serviceId}/url`);
-    return res.json();
+
+    const services = await this.listServices();
+    const target = services.find((service) => service.id === serviceId);
+    if (!target) throw new Error('Unknown service');
+    if (target.isAvailable === false) {
+      throw new Error(target.disabledReason ?? 'This service is not available yet');
+    }
+
+    const redirectUri = AuthSession.makeRedirectUri({
+      scheme: 'wrapped',
+      path: 'connected',
+    });
+    const start = await this.request<{
+      url: string;
+      redirectUri: string;
+      localOnly?: boolean;
+    }>(`/api/services/${serviceId}/connect/start`, {
+      method: 'POST',
+      body: JSON.stringify({ redirectUri }),
+    });
+
+    if (start.localOnly) {
+      throw new Error('This service is handled on-device');
+    }
+
+    const authResult = await WebBrowser.openAuthSessionAsync(start.url, redirectUri);
+    if (authResult.type !== 'success' || !authResult.url) {
+      throw new Error('Connection was not completed');
+    }
+
+    const parsed = Linking.parse(authResult.url);
+    if (parsed.queryParams?.error) {
+      throw new Error(String(parsed.queryParams.error));
+    }
+
+    const refreshedServices = await this.listServices();
+    const refreshed = refreshedServices.find((service) => service.id === serviceId);
+    if (!refreshed) throw new Error('Connected service not found');
+    return refreshed;
   }
 
   async revokeService(serviceId: string): Promise<void> {
-    if (this.useMock) {
-      const list = await this.listServices();
-      const filtered = list.filter(s => s.id !== serviceId);
-      await AsyncStorage.setItem(STORAGE_KEYS.services, JSON.stringify(filtered));
+    if (serviceId === 'apple_health') {
+      await revokeAppleHealth();
+      const services = mergeServices(await listCachedServices(), [
+        {
+          id: 'apple_health',
+          name: 'Apple Health',
+          logoUrl: buildDefaultServiceMap().get('apple_health')?.logoUrl ?? '',
+          isConnected: false,
+          lastSyncedAt: null,
+          color: buildDefaultServiceMap().get('apple_health')?.color,
+          connectionKind: 'healthkit',
+          isAvailable: true,
+          localOnly: true,
+        },
+      ]);
+      await upsertServices(services);
       return;
     }
-    await fetch(`http://localhost:3000/api/auth/${serviceId}/revoke`, {
-      method: 'DELETE',
-      headers: { 'x-user-id': 'demo-user' },
+
+    await this.request(`/api/services/${serviceId}`, { method: 'DELETE' });
+    await this.listServices();
+  }
+
+  async syncService(serviceId: string): Promise<void> {
+    const range = resolveRange('year');
+
+    if (serviceId === 'apple_health') {
+      const data = await syncAppleHealth(range.periodStart, range.periodEnd);
+      await saveAggregate({
+        serviceId,
+        periodStart: range.periodStart,
+        periodEnd: range.periodEnd,
+        data,
+      });
+      await saveSyncLog(serviceId, 'success');
+      const services = mergeServices(await listCachedServices(), [
+        {
+          id: 'apple_health',
+          name: 'Apple Health',
+          logoUrl: buildDefaultServiceMap().get('apple_health')?.logoUrl ?? '',
+          isConnected: true,
+          lastSyncedAt: new Date().toISOString(),
+          color: buildDefaultServiceMap().get('apple_health')?.color,
+          connectionKind: 'healthkit',
+          isAvailable: true,
+          localOnly: true,
+        },
+      ]);
+      await upsertServices(services);
+      return;
+    }
+
+    const result = await this.request<{
+      synced: boolean;
+      stats: {
+        service: string;
+        period: { start: string; end: string };
+        aggregates: Record<string, unknown>;
+      };
+    }>(`/api/services/${serviceId}/sync`, {
+      method: 'POST',
+      body: JSON.stringify(range),
     });
+
+    await saveAggregate({
+      serviceId,
+      periodStart: result.stats.period.start,
+      periodEnd: result.stats.period.end,
+      data: result.stats.aggregates,
+    });
+    await saveSyncLog(serviceId, 'success');
+    await this.listServices();
   }
 
   async getWrapped(id: string): Promise<WrappedData> {
-    if (this.useMock) {
-      return {
-        sessionId: id,
-        cards: MOCK_WRAPPED.cards,
-      };
-    }
-    const res = await fetch(`http://localhost:3000/api/wrapped/${id}`);
-    if (!res.ok) throw new Error('Failed to fetch wrapped');
-    return res.json();
+    const cached = await getWrappedSession(id);
+    if (cached) return cached;
+
+    const wrapped = await this.request<WrappedData>(`/api/wrapped/${id}`);
+    await saveWrappedSession({
+      session: wrapped,
+      templateId: 'custom',
+      templateName: 'Saved recap',
+      period: 'year',
+      accentKey: 'lilac',
+    });
+    return wrapped;
   }
 
   async generateWrapped(
     serviceIds: string[],
-    opts: { templateId?: string; templateName?: string; period?: string; accentKey?: string } = {},
+    opts: WrappedGenerationOptions = {},
   ): Promise<WrappedData> {
-    if (this.useMock) {
-      await new Promise(r => setTimeout(r, 1800));
-      const id = 'recap-' + Date.now();
-      const payload: WrappedData = {
-        sessionId: id,
-        year: new Date().getFullYear(),
-        services: serviceIds,
-        cards: MOCK_WRAPPED.cards,
-        createdAt: new Date().toISOString(),
-      };
-      await this.saveRecap({
-        id,
-        templateId: opts.templateId ?? 'custom',
-        templateName: opts.templateName ?? 'Custom mix',
-        services: serviceIds,
-        period: opts.period ?? 'year',
-        cardCount: payload.cards.length,
-        createdAt: payload.createdAt!,
-        accentKey: opts.accentKey ?? 'lilac',
-      });
-      return payload;
+    const services = await this.listServices();
+    const selectedServices = services.filter((service) => serviceIds.includes(service.id));
+    const localOnlyServiceIds = selectedServices.filter((service) => service.localOnly).map((service) => service.id);
+    let localAggregates = localOnlyServiceIds.length
+      ? await listLatestAggregates(localOnlyServiceIds)
+      : [];
+
+    for (const serviceId of localOnlyServiceIds) {
+      if (!localAggregates.find((aggregate) => aggregate.service === serviceId)) {
+        await this.syncService(serviceId);
+      }
     }
-    const res = await fetch('http://localhost:3000/api/wrapped/generate', {
+
+    localAggregates = localOnlyServiceIds.length
+      ? await listLatestAggregates(localOnlyServiceIds)
+      : [];
+
+    const payload = await this.request<WrappedData>('/api/wrapped/generate', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-user-id': 'demo-user',
-      },
-      body: JSON.stringify({ services: serviceIds, ...opts }),
+      body: JSON.stringify({
+        serviceIds,
+        period: opts.period ?? 'year',
+        templateId: opts.templateId,
+        templateName: opts.templateName,
+        accentKey: opts.accentKey,
+        localAggregates,
+      }),
     });
-    if (!res.ok) throw new Error('Generation failed');
-    return res.json();
+
+    const wrapped: WrappedData = {
+      ...payload,
+      year: payload.year ?? new Date().getFullYear(),
+      services: payload.services ?? serviceIds,
+      createdAt: payload.createdAt ?? new Date().toISOString(),
+    };
+
+    await saveWrappedSession({
+      session: wrapped,
+      templateId: opts.templateId,
+      templateName: opts.templateName ?? 'Custom mix',
+      period: opts.period ?? 'year',
+      accentKey: opts.accentKey ?? 'lilac',
+    });
+
+    return wrapped;
   }
 
   async listRecaps(): Promise<RecapSummary[]> {
-    const raw = await AsyncStorage.getItem(STORAGE_KEYS.recaps);
-    if (!raw) return [];
-    const parsed: RecapSummary[] = JSON.parse(raw);
-    // Newest first
-    return parsed.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-  }
-
-  private async saveRecap(recap: RecapSummary): Promise<void> {
-    const existing = await this.listRecaps();
-    const next = [recap, ...existing].slice(0, 20);  // keep last 20
-    await AsyncStorage.setItem(STORAGE_KEYS.recaps, JSON.stringify(next));
+    const summaries = await listRecapSummaries();
+    const counts = await updateRecapCardCounts();
+    return summaries.map((summary) => ({
+      ...summary,
+      cardCount: counts.get(summary.id) ?? summary.cardCount,
+    }));
   }
 
   async deleteRecap(id: string): Promise<void> {
-    const existing = await this.listRecaps();
-    const next = existing.filter(r => r.id !== id);
-    await AsyncStorage.setItem(STORAGE_KEYS.recaps, JSON.stringify(next));
+    await deleteLocalRecap(id);
   }
 
-  async syncService(serviceId: string): Promise<void> {
-    if (this.useMock) {
-      await new Promise(r => setTimeout(r, 1500));
-      return;
-    }
-    await fetch(`http://localhost:3000/api/services/${serviceId}/sync`, {
-      method: 'POST',
-      headers: { 'x-user-id': 'demo-user' },
-    });
+  async shareWrapped(id: string, target: unknown): Promise<void> {
+    const session = await this.getWrapped(id);
+    await this.request(`/api/wrapped/${id}/share`, { method: 'POST' }).catch(() => null);
+    await shareWrappedCapture(session, target);
   }
 
   async deleteAllData(): Promise<void> {
-    await AsyncStorage.multiRemove([
-      STORAGE_KEYS.services,
-      STORAGE_KEYS.recaps,
-      '@wrapped_user_prefs',
-    ]);
+    await this.request('/api/me', { method: 'DELETE' }).catch(() => null);
+    await deleteAllLocalData();
+    await clearSession();
+  }
+
+  async getCachedAggregate(serviceId: string, period = 'year') {
+    const range = resolveRange(period);
+    return getAggregate(serviceId, range.periodStart, range.periodEnd);
   }
 }
 
