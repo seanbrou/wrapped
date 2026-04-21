@@ -27,7 +27,7 @@ export type GlassEffect = 'frost' | 'liquid';
 
 interface Props {
   children?: React.ReactNode;
-  style?: ViewStyle;
+  style?: ViewStyle | ViewStyle[];
   radius?: number;
   intensity?: number;
   tint?: GlassTint;

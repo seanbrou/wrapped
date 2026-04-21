@@ -160,9 +160,17 @@ export default function Home() {
           <View style={styles.heroHeader}>
             <View style={styles.heroTopRow}>
               <Text style={styles.wordmark}>wrapped.</Text>
-              <View style={styles.yearPill}>
+              <LiquidGlass
+                style={styles.yearPill}
+                effect="liquid"
+                intensity={90}
+                tint="light"
+                radius={radii.pill}
+                rim
+                highlight
+              >
                 <Text style={styles.yearPillText}>2026</Text>
-              </View>
+              </LiquidGlass>
             </View>
             <Text style={styles.greeting}>{greeting}.</Text>
             <Text style={styles.heroLede}>
@@ -485,11 +493,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: radii.pill,
-    backgroundColor: colors.primary,
   },
   yearPillText: {
     ...type.caption,
-    color: colors.inverse,
+    color: colors.primary,
     fontWeight: '700',
     letterSpacing: 1,
   },

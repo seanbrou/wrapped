@@ -22,10 +22,21 @@ function CreateButton() {
           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
           router.push('/wizard');
         }}
-        style={({ pressed }) => [styles.fab, pressed && styles.fabPressed]}
+        style={({ pressed }) => [pressed && styles.fabPressed]}
         accessibilityLabel="Create new recap"
       >
-        <Text style={styles.fabGlyph}>+</Text>
+        <LiquidGlass
+          style={styles.fab}
+          effect="liquid"
+          intensity={92}
+          tint="light"
+          radius={radii.pill}
+          rim
+          highlight
+          elevated
+        >
+          <Text style={styles.fabGlyph}>+</Text>
+        </LiquidGlass>
       </Pressable>
       <Text style={styles.fabCaption}>New recap</Text>
     </View>
@@ -136,7 +147,7 @@ const styles = StyleSheet.create({
     width: 62,
     height: 62,
     borderRadius: radii.pill,
-    backgroundColor: colors.primary,
+    backgroundColor: 'transparent',
     alignItems: 'center',
     justifyContent: 'center',
     ...shadows.fab,
@@ -145,7 +156,7 @@ const styles = StyleSheet.create({
     transform: [{ scale: 0.94 }],
   },
   fabGlyph: {
-    color: colors.inverse,
+    color: colors.primary,
     fontSize: 34,
     lineHeight: 36,
     fontWeight: '300',

@@ -7,14 +7,18 @@ import {
   Dimensions,
   Pressable,
   Easing,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { colors, type, space, radii, motion } from '../lib/theme';
 import Confetti from '../components/Confetti';
 
 const { width: W, height: H } = Dimensions.get('window');
+
+const ONBOARDING_KEY = '@wrapped_onboarding_complete';
 
 // Three plain steps: what it is → what you do → privacy. No jargon.
 const CHAPTERS = [
@@ -40,7 +44,7 @@ const CHAPTERS = [
 
 export default function Entry() {
   const router = useRouter();
-  const [phase, setPhase] = useState<'splash' | 'onboard'>('splash');
+  const [phase, setPhase] = useState<'checking' | 'splash' | 'onboard'>('checking');
   const [step, setStep] = useState(0);
 
   // Splash: wordmark fades up, a thin rule draws across the width.
@@ -54,7 +58,20 @@ export default function Entry() {
   const chapterY = useRef(new Animated.Value(30)).current;
   const numberScale = useRef(new Animated.Value(1.1)).current;
 
+  // Check onboarding status on mount
   useEffect(() => {
+    AsyncStorage.getItem(ONBOARDING_KEY).then((value) => {
+      if (value === 'true') {
+        // User has already seen onboarding — skip straight to dashboard
+        router.replace('/(tabs)/dashboard');
+      } else {
+        setPhase('splash');
+      }
+    });
+  }, []);
+
+  useEffect(() => {
+    if (phase !== 'splash') return;
     Animated.sequence([
       Animated.delay(180),
       Animated.parallel([
@@ -81,7 +98,7 @@ export default function Entry() {
     ]).start(() => {
       setPhase('onboard');
     });
-  }, []);
+  }, [phase]);
 
   useEffect(() => {
     if (phase !== 'onboard') return;
@@ -100,10 +117,16 @@ export default function Entry() {
     ]).start();
   }, [phase, step]);
 
+  async function finishOnboarding() {
+    await AsyncStorage.setItem(ONBOARDING_KEY, 'true');
+    Haptics.selectionAsync();
+    router.replace('/(tabs)/dashboard');
+  }
+
   function advance() {
     Haptics.selectionAsync();
     if (step >= CHAPTERS.length - 1) {
-      router.replace('/(tabs)/dashboard');
+      finishOnboarding();
       return;
     }
     Animated.parallel([
@@ -121,8 +144,19 @@ export default function Entry() {
   }
 
   function skip() {
-    Haptics.selectionAsync();
-    router.replace('/(tabs)/dashboard');
+    finishOnboarding();
+  }
+
+  if (phase === 'checking') {
+    return (
+      <View style={styles.screen}>
+        <SafeAreaView style={styles.splashSafe} edges={['top', 'bottom']}>
+          <View style={styles.splashCenter}>
+            <ActivityIndicator size="small" color={colors.primary} />
+          </View>
+        </SafeAreaView>
+      </View>
+    );
   }
 
   if (phase === 'splash') {

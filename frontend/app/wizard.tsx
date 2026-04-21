@@ -390,31 +390,49 @@ export default function Wizard() {
             onPress={next}
             disabled={!canAdvance}
             style={({ pressed }) => [
-              styles.cta,
-              !canAdvance && styles.ctaDisabled,
               pressed && styles.ctaPressed,
             ]}
           >
-            <Text style={[styles.ctaText, !canAdvance && styles.ctaTextDisabled]}>
-              {step === 0 ? 'Continue' : step === 1 ? 'Set the range' : 'Review'}
-            </Text>
+            <LiquidGlass
+              style={[!canAdvance ? styles.ctaDisabled : styles.cta]}
+              effect="liquid"
+              intensity={!canAdvance ? 40 : 92}
+              tint="light"
+              radius={radii.pill}
+              rim
+              highlight
+              elevated={canAdvance}
+            >
+              <Text style={[styles.ctaText, !canAdvance && styles.ctaTextDisabled]}>
+                {step === 0 ? 'Continue' : step === 1 ? 'Set the range' : 'Review'}
+              </Text>
+            </LiquidGlass>
           </Pressable>
         ) : (
           <Pressable
             onPress={generate}
             disabled={generating || selected.length === 0}
             style={({ pressed }) => [
-              styles.cta,
-              (generating || selected.length === 0) && styles.ctaDisabled,
               pressed && styles.ctaPressed,
             ]}
           >
-            <Text style={[
-              styles.ctaText,
-              (selected.length === 0) && styles.ctaTextDisabled,
-            ]}>
-              {generating ? 'Generating your recap…' : 'Generate recap'}
-            </Text>
+            <LiquidGlass
+              style={[!(generating || selected.length === 0) ? styles.cta : styles.ctaDisabled]}
+              effect="liquid"
+              intensity={(generating || selected.length === 0) ? 40 : 92}
+              tint="light"
+              radius={radii.pill}
+              rim
+              highlight
+              elevated={!generating && selected.length > 0}
+            >
+              <Text style={[
+                styles.ctaText,
+                (selected.length === 0) && styles.ctaTextDisabled,
+              ]}>
+                {generating ? 'Generating your recap…' : 'Generate recap'}
+              </Text>
+            </LiquidGlass>
           </Pressable>
         )}
       </View>
@@ -724,12 +742,11 @@ const styles = StyleSheet.create({
   cta: {
     height: 56,
     borderRadius: radii.pill,
-    backgroundColor: colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
   },
   ctaDisabled: {
-    backgroundColor: colors.backgroundAlt,
+    opacity: 0.5,
   },
   ctaPressed: {
     opacity: 0.92,
@@ -737,7 +754,7 @@ const styles = StyleSheet.create({
   },
   ctaText: {
     ...type.bodyMedium,
-    color: colors.inverse,
+    color: colors.primary,
     fontWeight: '600',
   },
   ctaTextDisabled: {
