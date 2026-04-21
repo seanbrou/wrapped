@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, Animated, Easing, Dimensions } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { colors, type, space, motion, serviceById, type StoryAccent } from '../lib/theme';
 
 const { width: W } = Dimensions.get('window');
@@ -13,13 +14,17 @@ interface Props {
   accent: StoryAccent;
 }
 
-// Full-bleed poster. The numeral is the composition.
 export function HeroStatCard({ stat, value, comparison, service, accent }: Props) {
   const svc = serviceById[service];
   const numeralFade = useRef(new Animated.Value(0)).current;
   const numeralY = useRef(new Animated.Value(24)).current;
   const captionFade = useRef(new Animated.Value(0)).current;
   const footerFade = useRef(new Animated.Value(0)).current;
+
+  // Simulated beat for Spotify
+  const beat1 = useRef(new Animated.Value(1)).current;
+  const beat2 = useRef(new Animated.Value(1)).current;
+  const beat3 = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
     Animated.sequence([
@@ -48,15 +53,52 @@ export function HeroStatCard({ stat, value, comparison, service, accent }: Props
     ]).start();
   }, []);
 
+  // Spotify beat animation
+  useEffect(() => {
+    if (service !== 'spotify') return;
+    const anim = Animated.loop(
+      Animated.sequence([
+        Animated.parallel([
+          Animated.timing(beat1, { toValue: 1.6, duration: 250, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+          Animated.timing(beat2, { toValue: 1.3, duration: 300, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+          Animated.timing(beat3, { toValue: 1.5, duration: 280, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+        ]),
+        Animated.parallel([
+          Animated.timing(beat1, { toValue: 1, duration: 350, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+          Animated.timing(beat2, { toValue: 1, duration: 400, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+          Animated.timing(beat3, { toValue: 1, duration: 380, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+        ]),
+        Animated.delay(200),
+      ])
+    );
+    anim.start();
+    return () => anim.stop();
+  }, [service]);
+
   const statLength = stat.length;
   const scale = statLength > 5 ? 0.7 : statLength > 4 ? 0.85 : 1;
 
   return (
     <View style={styles.root}>
+      {/* Subtle gradient overlay for depth */}
+      <LinearGradient
+        colors={[accent.fg + '00', accent.fg + '08']}
+        style={StyleSheet.absoluteFill}
+        start={{ x: 0.5, y: 0 }}
+        end={{ x: 0.5, y: 1 }}
+      />
+
       <View style={styles.top}>
         <Text style={[styles.eyebrow, { color: accent.fg }]}>
           {svc?.name ?? service} · {svc?.signal ?? 'metric'}
         </Text>
+        {service === 'spotify' && (
+          <View style={styles.beatRow}>
+            <Animated.View style={[styles.beatBar, { backgroundColor: accent.fg, transform: [{ scaleY: beat1 }] }]} />
+            <Animated.View style={[styles.beatBar, { backgroundColor: accent.fg, transform: [{ scaleY: beat2 }] }]} />
+            <Animated.View style={[styles.beatBar, { backgroundColor: accent.fg, transform: [{ scaleY: beat3 }] }]} />
+          </View>
+        )}
       </View>
 
       <View style={styles.center}>
@@ -104,10 +146,25 @@ const styles = StyleSheet.create({
   },
   top: {
     marginBottom: space.lg,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
   eyebrow: {
     ...type.eyebrow,
     opacity: 0.75,
+  },
+  beatRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 3,
+    height: 16,
+  },
+  beatBar: {
+    width: 3,
+    height: 14,
+    borderRadius: 1.5,
+    opacity: 0.6,
   },
   center: {
     flex: 1,

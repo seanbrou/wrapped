@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -48,17 +48,30 @@ export default function Player() {
   const [i, setI] = useState(0);
   const [paused, setPaused] = useState(false);
 
-  // Segment progress (width of the current bar segment)
+  // Segment progress
   const seg = useRef(new Animated.Value(0)).current;
   const segAnim = useRef<Animated.CompositeAnimation | null>(null);
 
-  // Card cross-fade
-  const bgFade = useRef(new Animated.Value(1)).current;
-  const fgFade = useRef(new Animated.Value(1)).current;
-  const fgY = useRef(new Animated.Value(0)).current;
+  // Card transitions — slide + scale + fade
+  const cardTranslateX = useRef(new Animated.Value(0)).current;
+  const cardScale = useRef(new Animated.Value(1)).current;
+  const cardOpacity = useRef(new Animated.Value(1)).current;
+  const cardRotate = useRef(new Animated.Value(0)).current;
+
+  // Background gradient animation
+  const bgHueShift = useRef(new Animated.Value(0)).current;
+  const bgPulse = useRef(new Animated.Value(1)).current;
+
+  // Pause overlay
+  const pauseScale = useRef(new Animated.Value(0)).current;
+  const pauseOpacity = useRef(new Animated.Value(0)).current;
+  const pausePulse = useRef(new Animated.Value(1)).current;
 
   // Entrance
   const entry = useRef(new Animated.Value(0)).current;
+
+  // Dot seeker
+  const [dotsLayout, setDotsLayout] = useState({ width: 0, x: 0 });
 
   useEffect(() => {
     Animated.timing(entry, {
@@ -67,6 +80,43 @@ export default function Player() {
       easing: Easing.out(Easing.cubic),
       useNativeDriver: true,
     }).start();
+  }, []);
+
+  // Background ambient animation
+  useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(bgHueShift, {
+          toValue: 1,
+          duration: 8000,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: false,
+        }),
+        Animated.timing(bgHueShift, {
+          toValue: 0,
+          duration: 8000,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: false,
+        }),
+      ])
+    ).start();
+
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(bgPulse, {
+          toValue: 1.03,
+          duration: 4000,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+        Animated.timing(bgPulse, {
+          toValue: 1,
+          duration: 4000,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
   }, []);
 
   useEffect(() => {
@@ -80,19 +130,40 @@ export default function Player() {
       });
   }, [params.id, router]);
 
-  // Drive the segment progress for the active card.
   useEffect(() => {
     if (cards.length === 0) return;
     startSegment();
     return () => segAnim.current?.stop();
   }, [i, paused]);
 
+  // Pause overlay animation
+  useEffect(() => {
+    if (paused) {
+      Animated.parallel([
+        Animated.spring(pauseScale, { toValue: 1, friction: 6, tension: 120, useNativeDriver: true }),
+        Animated.timing(pauseOpacity, { toValue: 1, duration: 200, useNativeDriver: true }),
+      ]).start();
+
+      // Start pulsing
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(pausePulse, { toValue: 1.15, duration: 800, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+          Animated.timing(pausePulse, { toValue: 1, duration: 800, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+        ])
+      ).start();
+    } else {
+      Animated.parallel([
+        Animated.timing(pauseScale, { toValue: 0, duration: 200, useNativeDriver: true }),
+        Animated.timing(pauseOpacity, { toValue: 0, duration: 200, useNativeDriver: true }),
+      ]).start();
+      pausePulse.setValue(1);
+    }
+  }, [paused]);
+
   function startSegment() {
     segAnim.current?.stop();
     if (paused) return;
-    // Resume from current value rather than snapping back.
-    // @ts-ignore — private API exists across RN versions
-    const current: number = (seg as any)._value ?? 0;
+    const current: number = (seg as any).__getValue?.() ?? (seg as any)._value ?? 0;
     const remaining = Math.max(0, SEGMENT_MS * (1 - current));
     segAnim.current = Animated.timing(seg, {
       toValue: 1,
@@ -105,7 +176,7 @@ export default function Player() {
     });
   }
 
-  function transitionTo(nextIndex: number, dir: 1 | -1) {
+  const transitionTo = useCallback((nextIndex: number, dir: 1 | -1) => {
     if (nextIndex < 0) return;
     if (nextIndex >= cards.length) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -119,39 +190,45 @@ export default function Player() {
     Haptics.selectionAsync();
     segAnim.current?.stop();
 
+    // Exit current card
     Animated.parallel([
-      Animated.timing(fgFade, { toValue: 0, duration: 180, useNativeDriver: true }),
-      Animated.timing(fgY, { toValue: dir * -16, duration: 180, useNativeDriver: true }),
-      Animated.timing(bgFade, { toValue: 0, duration: 220, useNativeDriver: true }),
+      Animated.timing(cardOpacity, { toValue: 0, duration: 200, useNativeDriver: true }),
+      Animated.timing(cardTranslateX, { toValue: dir * -W * 0.3, duration: 280, easing: Easing.in(Easing.cubic), useNativeDriver: true }),
+      Animated.timing(cardScale, { toValue: 0.92, duration: 280, easing: Easing.in(Easing.cubic), useNativeDriver: true }),
+      Animated.timing(cardRotate, { toValue: dir * -2, duration: 280, useNativeDriver: true }),
     ]).start(() => {
       seg.setValue(0);
       setI(nextIndex);
-      fgY.setValue(dir * 16);
+
+      // Reset and enter new card
+      cardTranslateX.setValue(dir * W * 0.3);
+      cardScale.setValue(0.92);
+      cardRotate.setValue(dir * 2);
+
       Animated.parallel([
-        Animated.timing(bgFade, { toValue: 1, duration: 260, useNativeDriver: true }),
-        Animated.timing(fgFade, {
-          toValue: 1,
-          duration: 320,
-          easing: Easing.out(Easing.cubic),
-          useNativeDriver: true,
-        }),
-        Animated.spring(fgY, { toValue: 0, ...motion.springSoft, useNativeDriver: true }),
+        Animated.timing(cardOpacity, { toValue: 1, duration: 320, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+        Animated.spring(cardTranslateX, { toValue: 0, friction: 8, tension: 80, useNativeDriver: true }),
+        Animated.spring(cardScale, { toValue: 1, friction: 8, tension: 80, useNativeDriver: true }),
+        Animated.spring(cardRotate, { toValue: 0, friction: 8, tension: 80, useNativeDriver: true }),
       ]).start();
     });
-  }
+  }, [cards.length, params.id, router, seg, cardOpacity, cardTranslateX, cardScale, cardRotate]);
 
   function next() { transitionTo(i + 1, 1); }
   function prev() { transitionTo(i - 1, -1); }
 
-  // Press-and-hold pauses. Short tap advances/rewinds based on side.
+  function jumpTo(index: number) {
+    if (index === i || index < 0 || index >= cards.length) return;
+    const dir = index > i ? 1 : -1;
+    transitionTo(index, dir);
+  }
+
   const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   function onPressIn(side: 'left' | 'right') {
     pressTimer.current = setTimeout(() => {
       setPaused(true);
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }, 180);
-    // stash side on ref via closure
-    (onPressIn as any)._side = side;
   }
   function onPressOut(side: 'left' | 'right') {
     if (pressTimer.current) clearTimeout(pressTimer.current);
@@ -163,7 +240,6 @@ export default function Player() {
     else prev();
   }
 
-  // Vertical swipe: up → next, down → dismiss
   const pan = useRef(
     PanResponder.create({
       onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dy) > 16,
@@ -183,17 +259,41 @@ export default function Player() {
   const Card = CARDS[card.type] ?? HeroStatCard;
   const accent = accentFor(i);
 
+  // Compute gradient colors based on accent
+  const gradientColors = [
+    accent.bg,
+    accent.bg,
+    accent.fg + '08',
+  ];
+
   return (
     <Animated.View
       ref={captureTargetRef}
       style={[styles.screen, { opacity: entry }]}
       {...pan.panHandlers}
     >
-      {/* Background wash (cross-fades between cards) */}
+      {/* Animated background with subtle gradient shift */}
       <Animated.View
         style={[
           StyleSheet.absoluteFill,
-          { backgroundColor: accent.bg, opacity: bgFade },
+          {
+            backgroundColor: accent.bg,
+            opacity: 1,
+            transform: [{ scale: bgPulse }],
+          },
+        ]}
+      />
+      <Animated.View
+        style={[
+          StyleSheet.absoluteFill,
+          styles.gradientOverlay,
+          {
+            backgroundColor: accent.fg,
+            opacity: bgHueShift.interpolate({
+              inputRange: [0, 0.5, 1],
+              outputRange: [0, 0.04, 0],
+            }),
+          },
         ]}
       />
 
@@ -202,8 +302,12 @@ export default function Player() {
         style={[
           styles.stage,
           {
-            opacity: fgFade,
-            transform: [{ translateY: fgY }],
+            opacity: cardOpacity,
+            transform: [
+              { translateX: cardTranslateX },
+              { scale: cardScale },
+              { rotate: cardRotate.interpolate({ inputRange: [-10, 10], outputRange: ['-10deg', '10deg'] }) },
+            ],
           },
         ]}
       >
@@ -217,6 +321,23 @@ export default function Player() {
             ? () => api.shareWrapped(params.id as string, captureTargetRef)
             : undefined}
         />
+      </Animated.View>
+
+      {/* Pause overlay */}
+      <Animated.View
+        pointerEvents="none"
+        style={[
+          styles.pauseOverlay,
+          {
+            opacity: pauseOpacity,
+            transform: [{ scale: pauseScale }, { scale: pausePulse }],
+          },
+        ]}
+      >
+        <View style={[styles.pauseCircle, { borderColor: accent.fg }]}>
+          <View style={[styles.pauseBar, { backgroundColor: accent.fg }]} />
+          <View style={[styles.pauseBar, { backgroundColor: accent.fg }]} />
+        </View>
       </Animated.View>
 
       {/* Tap zones */}
@@ -233,7 +354,7 @@ export default function Player() {
         />
       </View>
 
-      {/* Chrome — explicit insets so bars + close sit below Dynamic Island / status bar */}
+      {/* Chrome */}
       <View
         pointerEvents="box-none"
         style={[
@@ -247,9 +368,9 @@ export default function Player() {
         {/* Progress bars */}
         <View style={styles.progressRow}>
           {cards.map((_, idx) => (
-            <View key={idx} style={[styles.segTrack, { backgroundColor: accent.fg + '33' }]}>
+            <View key={idx} style={[styles.segTrack, { backgroundColor: accent.fg + '25' }]}>
               {idx < i && (
-                <View style={[styles.segFill, { width: '100%', backgroundColor: accent.fg }]} />
+                <Animated.View style={[styles.segFill, { width: '100%', backgroundColor: accent.fg }]} />
               )}
               {idx === i && (
                 <Animated.View
@@ -261,6 +382,10 @@ export default function Player() {
                         inputRange: [0, 1],
                         outputRange: ['0%', '100%'],
                       }),
+                      shadowColor: accent.fg,
+                      shadowOffset: { width: 0, height: 0 },
+                      shadowRadius: 4,
+                      shadowOpacity: 0.4,
                     },
                   ]}
                 />
@@ -287,19 +412,52 @@ export default function Player() {
 
         <View style={{ flex: 1 }} />
 
-        {/* Bottom: progress + how to navigate */}
+        {/* Bottom: dot seeker + progress + how to navigate */}
         <View style={styles.bottomBar}>
-          <View style={styles.bottomLeft}>
-            <Text style={[styles.bottomLabel, { color: accent.fg, opacity: 0.75 }]}>
-              {String(i + 1).padStart(2, '0')} / {String(cards.length).padStart(2, '0')}
-            </Text>
-            {paused && (
-              <Text style={[styles.pausedLabel, { color: accent.fg }]}>Paused</Text>
-            )}
+          {/* Dot seeker */}
+          <View
+            style={styles.dotsRow}
+            onLayout={(e) => {
+              const { width, x } = e.nativeEvent.layout;
+              setDotsLayout({ width, x });
+            }}
+          >
+            {cards.map((_, idx) => (
+              <Pressable
+                key={idx}
+                onPress={() => jumpTo(idx)}
+                hitSlop={8}
+                style={styles.dotHitArea}
+              >
+                <View
+                  style={[
+                    styles.dot,
+                    {
+                      backgroundColor: accent.fg,
+                      opacity: idx === i ? 1 : idx < i ? 0.6 : 0.25,
+                      transform: [{ scale: idx === i ? 1.4 : 1 }],
+                    },
+                  ]}
+                />
+              </Pressable>
+            ))}
           </View>
-          <Text style={[styles.hint, { color: accent.fg }]}>
-            Tap sides · Hold to pause · Swipe up next
-          </Text>
+
+          <View style={styles.bottomMeta}>
+            <View style={styles.bottomLeft}>
+              <Text style={[styles.bottomLabel, { color: accent.fg, opacity: 0.75 }]}>
+                {String(i + 1).padStart(2, '0')} / {String(cards.length).padStart(2, '0')}
+              </Text>
+              {paused && (
+                <View style={styles.pausedBadge}>
+                  <Text style={[styles.pausedLabel, { color: accent.bg }]}>PAUSED</Text>
+                </View>
+              )}
+            </View>
+            <Text style={[styles.hint, { color: accent.fg }]}>
+              Tap sides · Hold to pause · Swipe up next
+            </Text>
+          </View>
         </View>
       </View>
     </Animated.View>
@@ -315,6 +473,9 @@ const styles = StyleSheet.create({
   stage: {
     ...StyleSheet.absoluteFillObject,
   },
+  gradientOverlay: {
+    ...StyleSheet.absoluteFillObject,
+  },
   taps: {
     ...StyleSheet.absoluteFillObject,
     flexDirection: 'row',
@@ -323,7 +484,31 @@ const styles = StyleSheet.create({
   tapLeft: { flex: 1 },
   tapRight: { flex: 2 },
 
-  // ─── Chrome ──────────────────────────────────────────────
+  // Pause overlay
+  pauseOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 15,
+    backgroundColor: '#00000033',
+  },
+  pauseCircle: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 8,
+  },
+  pauseBar: {
+    width: 5,
+    height: 24,
+    borderRadius: 2,
+  },
+
+  // Chrome
   chrome: {
     ...StyleSheet.absoluteFillObject,
     paddingHorizontal: space.md,
@@ -335,12 +520,12 @@ const styles = StyleSheet.create({
   },
   segTrack: {
     flex: 1,
-    height: 2.5,
+    height: 3,
     borderRadius: 2,
     overflow: 'hidden',
   },
   segFill: {
-    height: 2.5,
+    height: 3,
     borderRadius: 2,
   },
 
@@ -378,23 +563,50 @@ const styles = StyleSheet.create({
   bottomBar: {
     paddingHorizontal: space.sm,
     paddingBottom: space.sm,
-    gap: space.sm,
+    gap: space.md,
+  },
+  dotsRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 8,
+  },
+  dotHitArea: {
+    padding: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  bottomMeta: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
   bottomLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: space.md,
+    gap: space.sm,
   },
   bottomLabel: {
     ...type.eyebrow,
     fontSize: 10,
     letterSpacing: 2.8,
   },
+  pausedBadge: {
+    backgroundColor: colors.primary,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
   pausedLabel: {
     ...type.eyebrow,
-    fontSize: 10,
-    letterSpacing: 2,
-    opacity: 0.85,
+    fontSize: 9,
+    letterSpacing: 1.5,
+    fontWeight: '700',
   },
   hint: {
     ...type.caption,

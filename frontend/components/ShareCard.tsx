@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, Animated, Easing, Pressable, Share, Dimensions } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { colors, type, space, radii, motion, type StoryAccent } from '../lib/theme';
 
@@ -13,12 +14,12 @@ interface Props {
   onShare?: () => Promise<void> | void;
 }
 
-// Poster-style closer. Editorial lockup + share button.
 export function ShareCard({ stat, headline, accent, onShare }: Props) {
   const mark = useRef(new Animated.Value(0)).current;
   const title = useRef(new Animated.Value(0)).current;
   const detail = useRef(new Animated.Value(0)).current;
   const cta = useRef(new Animated.Value(0)).current;
+  const glow = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     Animated.sequence([
@@ -37,6 +38,14 @@ export function ShareCard({ stat, headline, accent, onShare }: Props) {
       }),
       Animated.spring(cta, { toValue: 1, ...motion.springSoft, useNativeDriver: true }),
     ]).start();
+
+    // Subtle glow pulse on the CTA
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(glow, { toValue: 1, duration: 1500, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+        Animated.timing(glow, { toValue: 0, duration: 1500, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+      ])
+    ).start();
   }, []);
 
   async function share() {
@@ -54,6 +63,13 @@ export function ShareCard({ stat, headline, accent, onShare }: Props) {
 
   return (
     <View style={styles.root}>
+      <LinearGradient
+        colors={[accent.fg + '00', accent.fg + '08']}
+        style={StyleSheet.absoluteFill}
+        start={{ x: 0.5, y: 0 }}
+        end={{ x: 0.5, y: 1 }}
+      />
+
       <Animated.View
         style={[
           styles.markRow,
@@ -124,6 +140,15 @@ export function ShareCard({ stat, headline, accent, onShare }: Props) {
             pressed && { opacity: 0.9, transform: [{ scale: 0.98 }] },
           ]}
         >
+          <Animated.View
+            style={[
+              styles.btnGlow,
+              {
+                backgroundColor: accent.fg,
+                opacity: glow.interpolate({ inputRange: [0, 1], outputRange: [0.2, 0.5] }),
+              },
+            ]}
+          />
           <Text style={[styles.shareText, { color: accent.bg }]}>Share your year</Text>
         </Pressable>
       </Animated.View>
@@ -184,10 +209,16 @@ const styles = StyleSheet.create({
     borderRadius: radii.pill,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  btnGlow: {
+    ...StyleSheet.absoluteFillObject,
   },
   shareText: {
     ...type.bodyMedium,
     fontWeight: '700',
     letterSpacing: -0.1,
+    zIndex: 1,
   },
 });
