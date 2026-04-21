@@ -514,6 +514,187 @@ function buildAppleHealthCards(stats: ServiceStats): WrappedCard[] {
   return cards;
 }
 
+function buildTraktCards(stats: ServiceStats, copy?: ServiceCopySuggestions): WrappedCard[] {
+  const movies = stats.aggregates.top_items.find((group) => group.category === 'movies')?.items ?? [];
+  const shows = stats.aggregates.top_items.find((group) => group.category === 'shows')?.items ?? [];
+  const totalHours = stats.aggregates.totals.totalHours ?? 0;
+  const moviesWatched = stats.aggregates.totals.moviesWatched ?? 0;
+  const episodesWatched = stats.aggregates.totals.episodesWatched ?? 0;
+  const topShow = String(stats.aggregates.streaks.topShow ?? shows[0]?.name ?? 'No show');
+  const bingeStyle = String(stats.aggregates.streaks.bingeStyle ?? 'viewer');
+
+  const cards: WrappedCard[] = [
+    {
+      id: cardId(),
+      type: 'hero_stat',
+      service: 'trakt',
+      data: {
+        stat: shortNumber(totalHours),
+        value: 'Hours watched',
+        comparison: copy?.heroComparison ?? `${topShow} led your watchlist across ${moviesWatched} movies and ${episodesWatched} episodes.`,
+      },
+    },
+  ];
+
+  const topMovies = buildTopList('trakt', 'Your Top Movies', movies);
+  if (topMovies) cards.push(topMovies);
+
+  const topShows = buildTopList('trakt', 'Your Top Shows', shows);
+  if (topShows) cards.push(topShows);
+
+  cards.push({
+    id: cardId(),
+    type: 'insight',
+    service: 'trakt',
+    data: {
+      headline: copy?.insightHeadline ?? `Your screen time tells a story — ${bingeStyle} energy all the way`,
+      supportingData: copy?.insightSupportingData ?? [
+        { label: 'MOVIES', value: String(moviesWatched) },
+        { label: 'EPISODES', value: String(episodesWatched) },
+      ],
+    },
+  });
+
+  const chart = buildChart('trakt', stats);
+  if (chart) cards.push(chart);
+
+  cards.push(buildCommunity('trakt', 'watch time', `${shortNumber(totalHours)} hours`, totalHours));
+  return cards;
+}
+
+function buildRedditCards(stats: ServiceStats, copy?: ServiceCopySuggestions): WrappedCard[] {
+  const subreddits = stats.aggregates.top_items.find((group) => group.category === 'subreddits')?.items ?? [];
+  const totalKarma = stats.aggregates.totals.totalKarma ?? 0;
+  const postsSubmitted = stats.aggregates.totals.postsSubmitted ?? 0;
+  const commentsMade = stats.aggregates.totals.commentsMade ?? 0;
+  const karmaTier = String(stats.aggregates.streaks.karmaTier ?? 'lurker');
+  const topSubreddit = String(stats.aggregates.streaks.topSubreddit ?? subreddits[0]?.name ?? 'No data');
+
+  const cards: WrappedCard[] = [
+    {
+      id: cardId(),
+      type: 'hero_stat',
+      service: 'reddit',
+      data: {
+        stat: shortNumber(totalKarma),
+        value: 'Karma earned',
+        comparison: copy?.heroComparison ?? `${topSubreddit} was your home base with ${postsSubmitted} posts and ${commentsMade} comments.`,
+      },
+    },
+  ];
+
+  const topSubs = buildTopList('reddit', 'Your Top Subreddits', subreddits);
+  if (topSubs) cards.push(topSubs);
+
+  cards.push({
+    id: cardId(),
+    type: 'insight',
+    service: 'reddit',
+    data: {
+      headline: copy?.insightHeadline ?? `You are a certified ${karmaTier} on Reddit`,
+      supportingData: copy?.insightSupportingData ?? [
+        { label: 'POSTS', value: String(postsSubmitted) },
+        { label: 'COMMENTS', value: String(commentsMade) },
+      ],
+    },
+  });
+
+  const chart = buildChart('reddit', stats);
+  if (chart) cards.push(chart);
+
+  cards.push(buildCommunity('reddit', 'karma power', `${shortNumber(totalKarma)} karma`, totalKarma));
+  return cards;
+}
+
+function buildRescueTimeCards(stats: ServiceStats, copy?: ServiceCopySuggestions): WrappedCard[] {
+  const activities = stats.aggregates.top_items.find((group) => group.category === 'activities')?.items ?? [];
+  const categories = stats.aggregates.top_items.find((group) => group.category === 'categories')?.items ?? [];
+  const totalHours = stats.aggregates.totals.totalHours ?? 0;
+  const productiveHours = stats.aggregates.totals.productiveHours ?? 0;
+  const distractingHours = stats.aggregates.totals.distractingHours ?? 0;
+  const avgPulse = stats.aggregates.totals.avgProductivityPulse ?? 0;
+  const productivityLabel = String(stats.aggregates.streaks.productivityLabel ?? 'focused');
+
+  const cards: WrappedCard[] = [
+    {
+      id: cardId(),
+      type: 'hero_stat',
+      service: 'rescuetime',
+      data: {
+        stat: shortNumber(totalHours),
+        value: 'Hours tracked',
+        comparison: copy?.heroComparison ?? `${shortNumber(productiveHours)} productive hours vs ${shortNumber(distractingHours)} distracting — ${productivityLabel} vibes.`,
+      },
+    },
+  ];
+
+  const topCategories = buildTopList('rescuetime', 'Your Top Categories', categories);
+  if (topCategories) cards.push(topCategories);
+
+  cards.push({
+    id: cardId(),
+    type: 'insight',
+    service: 'rescuetime',
+    data: {
+      headline: copy?.insightHeadline ?? `Productivity pulse averaged ${avgPulse} — ${productivityLabel} energy`,
+      supportingData: copy?.insightSupportingData ?? [
+        { label: 'PRODUCTIVE', value: `${shortNumber(productiveHours)}H` },
+        { label: 'DISTRACTING', value: `${shortNumber(distractingHours)}H` },
+      ],
+    },
+  });
+
+  const chart = buildChart('rescuetime', stats);
+  if (chart) cards.push(chart);
+
+  cards.push(buildCommunity('rescuetime', 'productivity', `${avgPulse} pulse`, avgPulse));
+  return cards;
+}
+
+function buildTodoistCards(stats: ServiceStats, copy?: ServiceCopySuggestions): WrappedCard[] {
+  const projects = stats.aggregates.top_items.find((group) => group.category === 'projects')?.items ?? [];
+  const tasksCompleted = stats.aggregates.totals.tasksCompleted ?? 0;
+  const recentCompleted = stats.aggregates.totals.recentCompleted ?? 0;
+  const dailyAverage = stats.aggregates.totals.dailyAverage ?? 0;
+  const topProject = String(stats.aggregates.streaks.topProject ?? projects[0]?.name ?? 'No project');
+  const completionStyle = String(stats.aggregates.streaks.completionStyle ?? 'building habits');
+
+  const cards: WrappedCard[] = [
+    {
+      id: cardId(),
+      type: 'hero_stat',
+      service: 'todoist',
+      data: {
+        stat: shortNumber(tasksCompleted),
+        value: 'Tasks completed',
+        comparison: copy?.heroComparison ?? `${topProject} was your productivity engine with ${dailyAverage} tasks per day.`,
+      },
+    },
+  ];
+
+  const topProjects = buildTopList('todoist', 'Your Top Projects', projects);
+  if (topProjects) cards.push(topProjects);
+
+  cards.push({
+    id: cardId(),
+    type: 'insight',
+    service: 'todoist',
+    data: {
+      headline: copy?.insightHeadline ?? `You are a ${completionStyle} — ${shortNumber(recentCompleted)} tasks knocked out recently`,
+      supportingData: copy?.insightSupportingData ?? [
+        { label: 'RECENT', value: String(recentCompleted) },
+        { label: 'DAILY AVG', value: String(dailyAverage) },
+      ],
+    },
+  });
+
+  const chart = buildChart('todoist', stats);
+  if (chart) cards.push(chart);
+
+  cards.push(buildCommunity('todoist', 'task mastery', `${shortNumber(tasksCompleted)} tasks`, tasksCompleted));
+  return cards;
+}
+
 const builders: Partial<Record<ServiceId, (stats: ServiceStats, copy?: ServiceCopySuggestions) => WrappedCard[]>> = {
   spotify: buildSpotifyCards,
   strava: buildStravaCards,
@@ -523,6 +704,10 @@ const builders: Partial<Record<ServiceId, (stats: ServiceStats, copy?: ServiceCo
   github: buildGitHubCards,
   notion: buildNotionCards,
   apple_health: buildAppleHealthCards,
+  trakt: buildTraktCards,
+  reddit: buildRedditCards,
+  rescuetime: buildRescueTimeCards,
+  todoist: buildTodoistCards,
 };
 
 function buildShareSummary(stats: ServiceStats[]) {
@@ -543,6 +728,14 @@ function buildShareSummary(stats: ServiceStats[]) {
         return `${shortNumber(serviceStats.aggregates.totals.starsEarned ?? 0)} stars earned`;
       case 'notion':
         return `${shortNumber(serviceStats.aggregates.totals.pageCount ?? 0)} pages indexed`;
+      case 'trakt':
+        return `${shortNumber(serviceStats.aggregates.totals.totalHours ?? 0)} hours watched`;
+      case 'reddit':
+        return `${shortNumber(serviceStats.aggregates.totals.totalKarma ?? 0)} karma earned`;
+      case 'rescuetime':
+        return `${shortNumber(serviceStats.aggregates.totals.totalHours ?? 0)} hours tracked`;
+      case 'todoist':
+        return `${shortNumber(serviceStats.aggregates.totals.tasksCompleted ?? 0)} tasks done`;
       default:
         return serviceStats.service;
     }

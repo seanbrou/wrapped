@@ -6,9 +6,13 @@ export type SupportedServiceId =
   | 'lastfm'
   | 'steam'
   | 'github'
-  | 'notion';
+  | 'notion'
+  | 'trakt'
+  | 'reddit'
+  | 'rescuetime'
+  | 'todoist';
 
-export type DeferredServiceId = 'goodreads' | 'youtube';
+export type DeferredServiceId = 'goodreads' | 'youtube' | 'apple_music';
 
 export type ServiceId = SupportedServiceId | DeferredServiceId;
 

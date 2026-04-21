@@ -10,7 +10,7 @@ import { getServiceAdapter } from '../plugins/index.js';
 import { selectCards } from '../services/cardSelector.js';
 import { generateAIInsights } from '../services/insightGenerator.js';
 import { requireAuth } from '../services/requestAuth.js';
-import type { ServiceId, ServiceStats } from '../types/index.js';
+import type { ServiceId, ServiceStats, ServiceCopySuggestions } from '../types/index.js';
 
 function resolveRange(input: {
   period?: string;
@@ -140,7 +140,17 @@ export async function wrappedRoutes(fastify: FastifyInstance) {
         return reply.status(400).send({ error: 'No synced data found for the selected services' });
       }
 
-      const copyByService = await generateAIInsights(stats, periodLabel(range.startIso, range.endIso));
+      const copyByService: Partial<Record<ServiceId, ServiceCopySuggestions>> = {};
+      for (const stat of stats) {
+        const copy = await generateAIInsights({
+          title: `${stat.service} recap`,
+          service: stat.service,
+          stats: stat.aggregates,
+          period: periodLabel(range.startIso, range.endIso),
+        });
+        copyByService[stat.service] = copy;
+      }
+
       const cards = selectCards(stats, copyByService, 15);
       const sessionId = crypto.randomUUID();
       const session = await wrappedSessions.create({
