@@ -1,7 +1,6 @@
 import crypto from 'node:crypto';
 import { aggregatedStats, connectedServices, dataDeletion, wrappedSessions, } from '../db/index.js';
 import { getServiceAdapter } from '../plugins/index.js';
-import { decryptToken, encryptToken } from '../services/anonymizer.js';
 import { selectCards } from '../services/cardSelector.js';
 import { generateAIInsights } from '../services/insightGenerator.js';
 import { requireAuth } from '../services/requestAuth.js';
@@ -68,43 +67,6 @@ async function loadStats(input) {
         const adapter = getServiceAdapter(serviceId);
         if (!connection || !adapter?.sync)
             continue;
-        let accessToken = connection.accessTokenEncrypted ? decryptToken(connection.accessTokenEncrypted) : null;
-        let refreshToken = connection.refreshTokenEncrypted ? decryptToken(connection.refreshTokenEncrypted) : null;
-        if (adapter.refresh &&
-            refreshToken &&
-            connection.expiresAt &&
-            connection.expiresAt <= Date.now() + 60_000) {
-            const refreshed = await adapter.refresh(refreshToken, connection.metadata);
-            accessToken = refreshed.accessToken;
-            refreshToken = refreshed.refreshToken ?? refreshToken;
-            await connectedServices.upsert({
-                userId: input.userId,
-                service: serviceId,
-                externalAccountId: refreshed.externalAccountId ?? connection.externalAccountId,
-                accessTokenEncrypted: accessToken ? encryptToken(accessToken) : null,
-                refreshTokenEncrypted: refreshToken ? encryptToken(refreshToken) : null,
-                tokenType: refreshed.tokenType ?? connection.tokenType,
-                scope: refreshed.scope ?? connection.scope,
-                expiresAt: refreshed.expiresAt ?? connection.expiresAt,
-                metadata: refreshed.metadata ?? connection.metadata,
-            });
-        }
-        const synced = await adapter.sync({
-            accessToken,
-            refreshToken,
-            externalAccountId: connection.externalAccountId,
-            connectionMetadata: connection.metadata,
-            periodStart: new Date(input.periodStart),
-            periodEnd: new Date(input.periodEnd),
-        });
-        await aggregatedStats.upsert({
-            userId: input.userId,
-            service: serviceId,
-            periodStart: synced.period.start,
-            periodEnd: synced.period.end,
-            data: synced.aggregates,
-        });
-        stats.push(synced);
     }
     return stats;
 }

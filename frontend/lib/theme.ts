@@ -53,6 +53,8 @@ export const colors = {
   fitbit:         '#00B0B9',
   youtube:        '#FF0000',
   lastfm:         '#D51007',
+  github:         '#24292F',
+  notion:         '#111111',
 
   // State
   success:        '#17A34A',
@@ -376,6 +378,28 @@ export const SERVICE_CONFIGS: ServiceConfig[] = [
     accentKey: 'sky',
     logoUri: 'https://www.google.com/s2/favicons?domain=steampowered.com&sz=256',
     authKind: 'openid',
+  },
+  {
+    id: 'github',
+    name: 'GitHub',
+    tagline: 'Repos, stars, and code habits',
+    signal: 'Projects shipped',
+    mark: 'G',
+    color: colors.github,
+    accentKey: 'sky',
+    logoUri: 'https://www.google.com/s2/favicons?domain=github.com&sz=256',
+    authKind: 'oauth2',
+  },
+  {
+    id: 'notion',
+    name: 'Notion',
+    tagline: 'Pages, databases, and docs',
+    signal: 'Workspace activity',
+    mark: 'N',
+    color: colors.notion,
+    accentKey: 'amber',
+    logoUri: 'https://www.google.com/s2/favicons?domain=notion.so&sz=256',
+    authKind: 'oauth2',
   },
   {
     id: 'fitbit',

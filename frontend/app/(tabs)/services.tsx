@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  Alert,
   View,
   Text,
   StyleSheet,
@@ -198,7 +199,9 @@ export default function ServicesScreen() {
       if (!wasLinked) {
         showDockWithTimer();
       }
-    } catch {
+    } catch (error) {
+      const message = error instanceof Error ? error.message : `Could not ${wasLinked ? 'remove' : 'connect'} ${svc.name}.`;
+      Alert.alert(wasLinked ? 'Connection not removed' : 'Connection failed', message);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     } finally {
       setBusy(null);

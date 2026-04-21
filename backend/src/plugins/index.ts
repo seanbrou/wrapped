@@ -17,10 +17,15 @@ const axiosClient = axios.create({
 
 function requireEnv(name: string) {
   const value = process.env[name];
-  if (!value) {
+  const normalized = value?.trim();
+  if (!normalized) {
     throw new Error(`Missing required environment variable: ${name}`);
   }
-  return value;
+  return normalized;
+}
+
+function hasEnv(...names: string[]) {
+  return names.every((name) => Boolean(process.env[name]?.trim()));
 }
 
 function md5(input: string) {
@@ -165,6 +170,44 @@ function finishOauth(tokens: {
     tokenType: tokens.token_type ?? 'Bearer',
     scope: tokens.scope,
   };
+}
+
+const githubApiHeaders = () => ({
+  Accept: 'application/vnd.github+json',
+  'X-GitHub-Api-Version': '2022-11-28',
+});
+
+function notionBasicAuth(clientId: string, clientSecret: string) {
+  return Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
+}
+
+function notionHeaders(accessToken?: string) {
+  return {
+    ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+    'Content-Type': 'application/json',
+    'Notion-Version': '2026-03-11',
+  };
+}
+
+function notionTitleFrom(result: Record<string, any>) {
+  if (result.object === 'page') {
+    const properties = result.properties ?? {};
+    for (const value of Object.values(properties) as Array<Record<string, any>>) {
+      if (value?.type === 'title') {
+        const text = (value.title as Array<{ plain_text?: string }> | undefined)
+          ?.map((item) => item.plain_text ?? '')
+          .join('')
+          .trim();
+        if (text) return text;
+      }
+    }
+  }
+
+  const titleArray =
+    (result.title as Array<{ plain_text?: string }> | undefined) ??
+    (result.name as Array<{ plain_text?: string }> | undefined);
+  const title = titleArray?.map((item) => item.plain_text ?? '').join('').trim();
+  return title || 'Untitled';
 }
 
 const spotifyScopes = ['user-read-private', 'user-top-read', 'user-read-recently-played'].join(' ');
@@ -777,6 +820,344 @@ export const steamPlugin: ServiceAdapter = {
   },
 };
 
+export const githubPlugin: ServiceAdapter = {
+  id: 'github',
+  name: 'GitHub',
+  logoUrl: 'https://github.githubassets.com/favicons/favicon.svg',
+  connectionKind: 'oauth2',
+  supported: hasEnv('GITHUB_CLIENT_ID', 'GITHUB_CLIENT_SECRET'),
+  disabledReason: hasEnv('GITHUB_CLIENT_ID', 'GITHUB_CLIENT_SECRET')
+    ? undefined
+    : 'Configure GitHub OAuth credentials to enable this integration.',
+  scopes: ['read:user', 'user:email', 'read:org'],
+  connect: {
+    start(context: ConnectStartContext) {
+      const params = new URLSearchParams({
+        client_id: requireEnv('GITHUB_CLIENT_ID'),
+        redirect_uri: context.callbackBaseUrl,
+        scope: 'read:user user:email read:org',
+        state: context.requestId,
+        allow_signup: 'false',
+      });
+
+      return {
+        url: `https://github.com/login/oauth/authorize?${params.toString()}`,
+      };
+    },
+
+    async finish(context: ConnectFinishContext) {
+      const code = context.params.code;
+      if (!code) throw new Error('GitHub callback missing code');
+
+      const response = await axiosClient.post(
+        'https://github.com/login/oauth/access_token',
+        new URLSearchParams({
+          client_id: requireEnv('GITHUB_CLIENT_ID'),
+          client_secret: requireEnv('GITHUB_CLIENT_SECRET'),
+          code,
+          redirect_uri: context.callbackBaseUrl,
+          state: context.lookupKey,
+        }),
+        {
+          headers: {
+            Accept: 'application/json',
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+        },
+      );
+
+      const accessToken = response.data.access_token as string | undefined;
+      if (!accessToken) {
+        throw new Error('GitHub token exchange failed');
+      }
+
+      const profile = await axiosClient.get('https://api.github.com/user', {
+        headers: {
+          ...githubApiHeaders(),
+          Authorization: `Bearer ${accessToken}`,
+        },
+      });
+
+      return {
+        accessToken,
+        tokenType: 'Bearer',
+        externalAccountId: String(profile.data.id),
+        metadata: {
+          login: profile.data.login as string | undefined,
+          name: profile.data.name as string | undefined,
+        },
+      };
+    },
+  },
+
+  async sync(context) {
+    if (!context.accessToken) throw new Error('GitHub access token missing');
+
+    const headers = {
+      ...githubApiHeaders(),
+      Authorization: `Bearer ${context.accessToken}`,
+    };
+
+    const profile = await axiosClient.get('https://api.github.com/user', { headers });
+    const repos: Array<{
+      name: string;
+      stargazers_count: number;
+      forks_count: number;
+      language: string | null;
+      size: number;
+    }> = [];
+
+    for (let page = 1; page <= 3; page += 1) {
+      const response = await axiosClient.get('https://api.github.com/user/repos', {
+        headers,
+        params: {
+          affiliation: 'owner',
+          sort: 'updated',
+          per_page: 100,
+          page,
+        },
+      });
+
+      const batch = response.data as typeof repos;
+      repos.push(...batch);
+      if (batch.length < 100) break;
+    }
+
+    const languageCounts = new Map<string, number>();
+    for (const repo of repos) {
+      if (!repo.language) continue;
+      languageCounts.set(repo.language, (languageCounts.get(repo.language) ?? 0) + 1);
+    }
+
+    const topLanguages = [...languageCounts.entries()].sort((left, right) => right[1] - left[1]);
+    const starredRepos = [...repos]
+      .sort((left, right) => right.stargazers_count - left.stargazers_count)
+      .slice(0, 5)
+      .map((repo) => ({
+        name: repo.name,
+        count: repo.stargazers_count,
+      }));
+
+    const totalStars = repos.reduce((sum, repo) => sum + repo.stargazers_count, 0);
+    const totalForks = repos.reduce((sum, repo) => sum + repo.forks_count, 0);
+
+    return {
+      service: 'github',
+      period: { start: isoDate(context.periodStart), end: isoDate(context.periodEnd) },
+      aggregates: {
+        top_items: [
+          { category: 'repos', items: starredRepos },
+          { category: 'languages', items: countsToItems(topLanguages, 5) },
+        ],
+        totals: {
+          repoCount: repos.length,
+          publicRepos: Number(profile.data.public_repos ?? repos.length),
+          followers: Number(profile.data.followers ?? 0),
+          following: Number(profile.data.following ?? 0),
+          starsEarned: totalStars,
+          forksEarned: totalForks,
+          totalRepoSizeKb: repos.reduce((sum, repo) => sum + (repo.size ?? 0), 0),
+        },
+        streaks: {
+          topLanguage: topLanguages[0]?.[0] ?? 'TypeScript',
+          topRepo: starredRepos[0]?.name ?? 'No featured repo yet',
+        },
+        comparisons: [
+          {
+            label: 'Forks',
+            current: totalStars,
+            previous: totalForks,
+            unit: 'signals',
+          },
+        ],
+        charts: [
+          {
+            title: 'Top Languages',
+            chartType: 'bar',
+            data: topLanguages.slice(0, 5).map((entry) => entry[1]),
+            labels: topLanguages.slice(0, 5).map((entry) => entry[0].slice(0, 1).toUpperCase()),
+          },
+        ],
+        meta: {
+          login: String(profile.data.login ?? ''),
+        },
+      },
+    };
+  },
+};
+
+export const notionPlugin: ServiceAdapter = {
+  id: 'notion',
+  name: 'Notion',
+  logoUrl: 'https://www.notion.so/images/favicon.ico',
+  connectionKind: 'oauth2',
+  supported: hasEnv('NOTION_CLIENT_ID', 'NOTION_CLIENT_SECRET'),
+  disabledReason: hasEnv('NOTION_CLIENT_ID', 'NOTION_CLIENT_SECRET')
+    ? undefined
+    : 'Configure Notion OAuth credentials to enable this integration.',
+  connect: {
+    start(context: ConnectStartContext) {
+      const params = new URLSearchParams({
+        owner: 'user',
+        client_id: requireEnv('NOTION_CLIENT_ID'),
+        redirect_uri: context.callbackBaseUrl,
+        response_type: 'code',
+        state: context.requestId,
+      });
+
+      return {
+        url: `https://api.notion.com/v1/oauth/authorize?${params.toString()}`,
+      };
+    },
+
+    async finish(context: ConnectFinishContext) {
+      const code = context.params.code;
+      if (!code) throw new Error('Notion callback missing code');
+
+      const clientId = requireEnv('NOTION_CLIENT_ID');
+      const clientSecret = requireEnv('NOTION_CLIENT_SECRET');
+      const response = await axiosClient.post(
+        'https://api.notion.com/v1/oauth/token',
+        {
+          grant_type: 'authorization_code',
+          code,
+          redirect_uri: context.callbackBaseUrl,
+        },
+        {
+          headers: {
+            Accept: 'application/json',
+            Authorization: `Basic ${notionBasicAuth(clientId, clientSecret)}`,
+            ...notionHeaders(),
+          },
+        },
+      );
+
+      return {
+        accessToken: response.data.access_token as string,
+        refreshToken: response.data.refresh_token as string | undefined,
+        externalAccountId: response.data.bot_id as string | undefined,
+        metadata: {
+          workspaceId: response.data.workspace_id as string | undefined,
+          workspaceName: response.data.workspace_name as string | undefined,
+          ownerType: response.data.owner?.type as string | undefined,
+        },
+      };
+    },
+  },
+
+  async refresh(refreshToken) {
+    const clientId = requireEnv('NOTION_CLIENT_ID');
+    const clientSecret = requireEnv('NOTION_CLIENT_SECRET');
+    const response = await axiosClient.post(
+      'https://api.notion.com/v1/oauth/token',
+      {
+        grant_type: 'refresh_token',
+        refresh_token: refreshToken,
+      },
+      {
+        headers: {
+          Accept: 'application/json',
+          Authorization: `Basic ${notionBasicAuth(clientId, clientSecret)}`,
+          ...notionHeaders(),
+        },
+      },
+    );
+
+    return {
+      accessToken: response.data.access_token as string,
+      refreshToken: response.data.refresh_token as string | undefined,
+      tokenType: 'Bearer',
+    };
+  },
+
+  async sync(context) {
+    if (!context.accessToken) throw new Error('Notion access token missing');
+
+    const headers = notionHeaders(context.accessToken);
+    const results: Array<Record<string, any>> = [];
+    let cursor: string | undefined;
+
+    for (let page = 0; page < 3; page += 1) {
+      const response = await axiosClient.post(
+        'https://api.notion.com/v1/search',
+        {
+          sort: { direction: 'descending', timestamp: 'last_edited_time' },
+          page_size: 100,
+          ...(cursor ? { start_cursor: cursor } : {}),
+        },
+        { headers },
+      );
+
+      const batch = (response.data.results as Array<Record<string, any>> | undefined) ?? [];
+      results.push(...batch);
+      if (!response.data.has_more || !response.data.next_cursor) break;
+      cursor = response.data.next_cursor as string;
+    }
+
+    const pages = results.filter((result) => result.object === 'page');
+    const databases = results.filter((result) => result.object === 'database' || result.object === 'data_source');
+    const byMonth = new Map<string, number>();
+    for (const result of results) {
+      const editedAt = result.last_edited_time as string | undefined;
+      if (!editedAt) continue;
+      const date = new Date(editedAt);
+      const key = `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
+      byMonth.set(key, (byMonth.get(key) ?? 0) + 1);
+    }
+
+    const monthly = buildMonthlySeries(context.periodStart, byMonth);
+    const recentPages = pages.slice(0, 5).map((page) => ({
+      name: notionTitleFrom(page),
+      count: 1,
+    }));
+    const recentDatabases = databases.slice(0, 5).map((database) => ({
+      name: notionTitleFrom(database),
+      count: 1,
+    }));
+
+    return {
+      service: 'notion',
+      period: { start: isoDate(context.periodStart), end: isoDate(context.periodEnd) },
+      aggregates: {
+        top_items: [
+          { category: 'pages', items: recentPages },
+          { category: 'databases', items: recentDatabases },
+        ],
+        totals: {
+          pageCount: pages.length,
+          databaseCount: databases.length,
+          totalItems: results.length,
+        },
+        streaks: {
+          mostRecentPage: recentPages[0]?.name ?? 'No shared pages yet',
+          workspaceName: String(context.connectionMetadata?.workspaceName ?? 'Notion'),
+        },
+        comparisons: [
+          {
+            label: 'Databases',
+            current: pages.length,
+            previous: databases.length,
+            unit: 'items',
+          },
+        ],
+        charts: [
+          {
+            title: 'Recent Workspace Activity',
+            chartType: 'area',
+            data: monthly.data,
+            labels: monthly.labels,
+            unit: 'items',
+          },
+        ],
+        meta: {
+          workspaceName: String(context.connectionMetadata?.workspaceName ?? ''),
+          sampleBased: true,
+        },
+      },
+    };
+  },
+};
+
 export const appleHealthPlugin: ServiceAdapter = {
   id: 'apple_health',
   name: 'Apple Health',
@@ -813,6 +1194,8 @@ export const serviceAdapters: Record<ServiceId, ServiceAdapter> = {
   fitbit: fitbitPlugin,
   lastfm: lastfmPlugin,
   steam: steamPlugin,
+  github: githubPlugin,
+  notion: notionPlugin,
   goodreads: goodreadsPlugin,
   youtube: youtubePlugin,
 };

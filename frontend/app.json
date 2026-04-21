@@ -15,7 +15,7 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.wrapped.app",
+      "bundleIdentifier": "app.wrapped.mobile",
       "config": {
         "usesNonExemptEncryption": false
       },

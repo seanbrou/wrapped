@@ -11,6 +11,17 @@ export const appConfig = {
         .map((value) => value.trim())
         .filter(Boolean),
     maxConcurrentSyncs: Math.max(1, Number.parseInt(process.env.MAX_CONCURRENT_SYNCS || '10', 10) || 10),
+    syncWorkerPollMs: Math.max(250, Number.parseInt(process.env.SYNC_WORKER_POLL_MS || '1000', 10) || 1000),
+    syncLeaseMs: Math.max(60_000, Number.parseInt(process.env.SYNC_LEASE_MS || '300000', 10) || 300_000),
+    syncRetryBaseMs: Math.max(1_000, Number.parseInt(process.env.SYNC_RETRY_BASE_MS || '60000', 10) || 60_000),
+};
+export const syncServicePolicies = {
+    spotify: { minIntervalMs: 2_000, maxConcurrency: 1 },
+    strava: { minIntervalMs: 3_000, maxConcurrency: 1 },
+    fitbit: { minIntervalMs: 4_000, maxConcurrency: 1 },
+    lastfm: { minIntervalMs: 2_000, maxConcurrency: 1 },
+    steam: { minIntervalMs: 2_000, maxConcurrency: 1 },
+    apple_health: { minIntervalMs: 500, maxConcurrency: 1 },
 };
 export function requireConfiguredSecret() {
     if (!appConfig.appSecret) {

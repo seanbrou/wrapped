@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  View, Text, StyleSheet, Pressable, ScrollView, Animated, Easing, Dimensions,
+  Alert, View, Text, StyleSheet, Pressable, ScrollView, Animated, Easing, Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -111,12 +111,6 @@ export default function Wizard() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
     setGenerating(true);
     progress.setValue(0);
-    Animated.timing(progress, {
-      toValue: 1,
-      duration: 2000,
-      easing: Easing.inOut(Easing.cubic),
-      useNativeDriver: false,
-    }).start();
 
     try {
       const result = await api.generateWrapped(selected, {
@@ -124,9 +118,25 @@ export default function Wizard() {
         templateName: template?.name ?? 'Custom mix',
         accentKey: template?.accentKey ?? 'lilac',
         period,
+        onSyncProgress: ({ stage, completed, total }) => {
+          if (stage === 'syncing') {
+            progress.setValue(total > 0 ? completed / (total + 1) : 0.5);
+            return;
+          }
+
+          progress.setValue(0.92);
+        },
       });
+      Animated.timing(progress, {
+        toValue: 1,
+        duration: 250,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: false,
+      }).start();
       router.replace(`/wrapped/${result.sessionId}`);
-    } catch {
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Wrapped generation failed.';
+      Alert.alert('Could not generate recap', message);
       setGenerating(false);
     }
   }

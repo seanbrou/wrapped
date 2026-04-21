@@ -11,6 +11,30 @@ export interface ServiceInfo {
   disabledReason?: string | null;
 }
 
+export type SyncJobStatus = 'pending' | 'running' | 'completed' | 'failed';
+
+export interface SyncJobRecord {
+  id: string;
+  userId: string;
+  service: string;
+  status: SyncJobStatus;
+  periodStart: string;
+  periodEnd: string;
+  attempts: number;
+  maxAttempts: number;
+  nextAttemptAt: string;
+  startedAt: string | null;
+  completedAt: string | null;
+  errorMessage: string | null;
+  stats: {
+    service: string;
+    period: { start: string; end: string };
+    aggregates: Record<string, unknown>;
+  } | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export type CardType =
   | 'hero_stat'
   | 'top_list'

@@ -1,40 +1,18 @@
 import crypto from 'node:crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import { aggregatedStats, connectedServices, oauthRequests, syncLogs, users } from '../db/index.js';
+import { connectedServices, oauthRequests, syncJobs, users } from '../db/index.js';
 import { getServiceAdapter, serviceAdapters } from '../plugins/index.js';
-import { decryptToken, encryptToken } from '../services/anonymizer.js';
+import { encryptToken } from '../services/anonymizer.js';
 import { appConfig, requirePublicApiBaseUrl, validateRedirectUri } from '../services/config.js';
 import { requireAuth } from '../services/requestAuth.js';
 import { issueRefreshToken, signAccessToken, verifyRefreshToken } from '../services/session.js';
+import { enqueueSyncJob } from '../services/syncQueue.js';
 import type { ServiceId } from '../types/index.js';
 
 const publicApiBaseUrl = requirePublicApiBaseUrl();
 
 function callbackBaseUrlFor(service: string) {
   return `${publicApiBaseUrl}/api/oauth/${service}/callback`;
-}
-
-let activeSyncs = 0;
-const pendingSyncWaiters: Array<() => void> = [];
-
-async function acquireSyncSlot() {
-  if (activeSyncs < appConfig.maxConcurrentSyncs) {
-    activeSyncs += 1;
-    return;
-  }
-
-  await new Promise<void>((resolve) => {
-    pendingSyncWaiters.push(() => {
-      activeSyncs += 1;
-      resolve();
-    });
-  });
-}
-
-function releaseSyncSlot() {
-  activeSyncs = Math.max(0, activeSyncs - 1);
-  const next = pendingSyncWaiters.shift();
-  if (next) next();
 }
 
 function appendParams(url: string, params: Record<string, string>) {
@@ -95,6 +73,15 @@ function htmlRedirect(url: string, message: string) {
     </script>
   </body>
 </html>`;
+}
+
+function sendRedirect(reply: FastifyReply, url: string, message: string) {
+  const protocol = new URL(url).protocol;
+  if (protocol !== 'http:' && protocol !== 'https:') {
+    return reply.redirect(url);
+  }
+
+  return reply.type('text/html').send(htmlRedirect(url, message));
 }
 
 function defaultAppRedirect(service: string, error?: string) {
@@ -264,22 +251,19 @@ export async function authRoutes(fastify: FastifyInstance) {
     if (query.error) {
       const redirectUri = oauthRequest?.redirectUri ?? defaultAppRedirect(adapter.id, query.error);
       if (oauthRequest) await oauthRequests.delete(oauthRequest.id);
-      return reply.type('text/html').send(
-        htmlRedirect(
-          appendParams(redirectUri, {
-            service: adapter.id,
-            status: 'error',
-            error: query.error,
-          }),
-          'Connection canceled.',
-        ),
+      return sendRedirect(
+        reply,
+        appendParams(redirectUri, {
+          service: adapter.id,
+          status: 'error',
+          error: query.error,
+        }),
+        'Connection canceled.',
       );
     }
 
     if (!oauthRequest) {
-      return reply.type('text/html').send(
-        htmlRedirect(defaultAppRedirect(adapter.id, 'expired_state'), 'Connection expired.'),
-      );
+      return sendRedirect(reply, defaultAppRedirect(adapter.id, 'expired_state'), 'Connection expired.');
     }
 
     try {
@@ -310,7 +294,7 @@ export async function authRoutes(fastify: FastifyInstance) {
         status: 'connected',
       });
 
-      return reply.type('text/html').send(htmlRedirect(redirectUri, 'Connection complete.'));
+      return sendRedirect(reply, redirectUri, 'Connection complete.');
     } catch (error) {
       await oauthRequests.delete(oauthRequest.id);
       const redirectUri = appendParams(oauthRequest.redirectUri, {
@@ -318,7 +302,7 @@ export async function authRoutes(fastify: FastifyInstance) {
         status: 'error',
         error: 'oauth_failed',
       });
-      return reply.type('text/html').send(htmlRedirect(redirectUri, 'Connection failed.'));
+      return sendRedirect(reply, redirectUri, 'Connection failed.');
     }
   });
 
@@ -352,75 +336,43 @@ export async function authRoutes(fastify: FastifyInstance) {
       return reply.status(400).send({ error: 'Service not connected' });
     }
 
-    let accessToken = connection.accessTokenEncrypted ? decryptToken(connection.accessTokenEncrypted) : null;
-    let refreshToken = connection.refreshTokenEncrypted ? decryptToken(connection.refreshTokenEncrypted) : null;
-
-    if (
-      adapter.refresh &&
-      refreshToken &&
-      connection.expiresAt &&
-      connection.expiresAt <= Date.now() + 60_000
-    ) {
-      const refreshed = await adapter.refresh(refreshToken, connection.metadata);
-      accessToken = refreshed.accessToken;
-      refreshToken = refreshed.refreshToken ?? refreshToken;
-      await connectedServices.upsert({
-        userId: auth.userId,
-        service: adapter.id,
-        externalAccountId: refreshed.externalAccountId ?? connection.externalAccountId,
-        accessTokenEncrypted: accessToken ? encryptToken(accessToken) : null,
-        refreshTokenEncrypted: refreshToken ? encryptToken(refreshToken) : null,
-        tokenType: refreshed.tokenType ?? connection.tokenType,
-        scope: refreshed.scope ?? connection.scope,
-        expiresAt: refreshed.expiresAt ?? connection.expiresAt,
-        metadata: refreshed.metadata ?? connection.metadata,
-      });
-    }
-
     const periodEnd = request.body?.periodEnd ? new Date(request.body.periodEnd) : new Date();
     const periodStart = request.body?.periodStart
       ? new Date(request.body.periodStart)
       : new Date(periodEnd.getFullYear() - 1, periodEnd.getMonth(), periodEnd.getDate());
 
-    await acquireSyncSlot();
+    const job = await enqueueSyncJob({
+      userId: auth.userId,
+      service: adapter.id,
+      periodStart: periodStart.toISOString().slice(0, 10),
+      periodEnd: periodEnd.toISOString().slice(0, 10),
+    });
 
-    try {
-      const stats = await adapter.sync({
-        accessToken,
-        refreshToken,
-        externalAccountId: connection.externalAccountId,
-        connectionMetadata: connection.metadata,
-        periodStart,
-        periodEnd,
-      });
+    return {
+      data: {
+        queued: true,
+        job,
+      },
+    };
+  });
 
-      await aggregatedStats.upsert({
-        userId: auth.userId,
-        service: adapter.id,
-        periodStart: stats.period.start,
-        periodEnd: stats.period.end,
-        data: stats.aggregates,
-      });
-      await connectedServices.markSynced(auth.userId, adapter.id);
-      await syncLogs.create({
-        userId: auth.userId,
-        service: adapter.id,
-        status: 'success',
-        periodStart: stats.period.start,
-        periodEnd: stats.period.end,
-      });
+  fastify.get<{ Params: { jobId: string } }>('/sync-jobs/:jobId', async (request, reply) => {
+    const auth = await requireAuth(request, reply);
+    if (!auth) return;
 
-      return { data: { synced: true, stats } };
-    } catch (error) {
-      await syncLogs.create({
-        userId: auth.userId,
-        service: adapter.id,
-        status: 'error',
-        message: String(error),
-      });
-      return reply.status(500).send({ error: `Failed to sync ${adapter.name}` });
-    } finally {
-      releaseSyncSlot();
+    const job = await syncJobs.getForUser(request.params.jobId, auth.userId);
+    if (!job) {
+      return reply.status(404).send({ error: 'Sync job not found' });
     }
+
+    return { data: job };
+  });
+
+  fastify.get('/sync-jobs', async (request, reply) => {
+    const auth = await requireAuth(request, reply);
+    if (!auth) return;
+
+    const jobs = await syncJobs.listForUser(auth.userId, 20);
+    return { data: jobs };
   });
 }

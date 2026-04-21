@@ -13,7 +13,7 @@ function percentileFromMetric(value) {
     const bounded = Math.max(0, Math.min(24, Math.round(Math.log10(Math.max(1, value)) * 6)));
     return Math.max(1, 25 - bounded);
 }
-function buildTopList(service, title, items) {
+function buildTopList(service, title, items, formatStat = (count) => count > 0 ? `${shortNumber(count)} plays` : 'Top of the year') {
     if (!items.length)
         return null;
     return {
@@ -25,7 +25,7 @@ function buildTopList(service, title, items) {
             items: items.slice(0, 5).map((item, index) => ({
                 rank: index + 1,
                 name: item.name,
-                stat: item.count > 0 ? `${shortNumber(item.count)} plays` : 'Top of the year',
+                stat: formatStat(item.count),
             })),
         },
     };
@@ -275,10 +275,113 @@ function buildSteamCards(stats, copy) {
     cards.push(buildCommunity('steam', 'playtime', `${shortNumber(totalHours)} hours`, totalHours));
     return cards;
 }
+function buildGitHubCards(stats, copy) {
+    const repos = stats.aggregates.top_items.find((group) => group.category === 'repos')?.items ?? [];
+    const languages = stats.aggregates.top_items.find((group) => group.category === 'languages')?.items ?? [];
+    const topLanguage = String(stats.aggregates.streaks.topLanguage ?? languages[0]?.name ?? 'TypeScript');
+    const topRepo = String(stats.aggregates.streaks.topRepo ?? repos[0]?.name ?? 'No featured repo');
+    const stars = stats.aggregates.totals.starsEarned ?? 0;
+    const followers = stats.aggregates.totals.followers ?? 0;
+    const cards = [
+        {
+            id: cardId(),
+            type: 'hero_stat',
+            service: 'github',
+            data: {
+                stat: shortNumber(stars),
+                value: 'Stars across your repos',
+                comparison: copy?.heroComparison ?? `${topLanguage} kept showing up, with ${topRepo} leading the highlight reel.`,
+            },
+        },
+    ];
+    const topRepos = buildTopList('github', 'Your Top Repos', repos, (count) => (count > 0 ? `${shortNumber(count)} stars` : 'Featured'));
+    if (topRepos)
+        cards.push(topRepos);
+    cards.push({
+        id: cardId(),
+        type: 'insight',
+        service: 'github',
+        data: {
+            headline: copy?.insightHeadline ??
+                `${topRepo} drew the most attention while ${topLanguage} stayed at the center of your work`,
+            supportingData: copy?.insightSupportingData ?? [
+                { label: 'FOLLOWERS', value: shortNumber(followers) },
+                { label: 'TOP LANG', value: topLanguage.toUpperCase() },
+            ],
+        },
+    });
+    const chart = buildChart('github', stats);
+    if (chart)
+        cards.push(chart);
+    const comparison = buildComparison('github', stats, 'Stars vs Forks');
+    if (comparison)
+        cards.push(comparison);
+    cards.push(buildCommunity('github', 'open-source pull', `${shortNumber(stars)} repo stars`, stars));
+    return cards;
+}
+function buildNotionCards(stats, copy) {
+    const pages = stats.aggregates.top_items.find((group) => group.category === 'pages')?.items ?? [];
+    const pageCount = stats.aggregates.totals.pageCount ?? 0;
+    const databaseCount = stats.aggregates.totals.databaseCount ?? 0;
+    const workspaceName = String(stats.aggregates.streaks.workspaceName ?? 'Notion');
+    const mostRecentPage = String(stats.aggregates.streaks.mostRecentPage ?? pages[0]?.name ?? 'Untitled');
+    const cards = [
+        {
+            id: cardId(),
+            type: 'hero_stat',
+            service: 'notion',
+            data: {
+                stat: shortNumber(pageCount),
+                value: 'Shared pages indexed',
+                comparison: copy?.heroComparison ??
+                    `${shortNumber(databaseCount)} databases and a steady stream of edits turned ${workspaceName} into recap material.`,
+            },
+        },
+    ];
+    const recentPages = buildTopList('notion', 'Recently Active Pages', pages, () => 'Edited this range');
+    if (recentPages)
+        cards.push(recentPages);
+    cards.push({
+        id: cardId(),
+        type: 'insight',
+        service: 'notion',
+        data: {
+            headline: copy?.insightHeadline ??
+                `${mostRecentPage} was one of the pages defining your recent workspace rhythm`,
+            supportingData: copy?.insightSupportingData ?? [
+                { label: 'DATABASES', value: shortNumber(databaseCount) },
+                { label: 'WORKSPACE', value: workspaceName.toUpperCase() },
+            ],
+        },
+    });
+    const chart = buildChart('notion', stats);
+    if (chart)
+        cards.push(chart);
+    const comparison = buildComparison('notion', stats, 'Pages vs Databases');
+    if (comparison)
+        cards.push(comparison);
+    cards.push(buildCommunity('notion', 'workspace sprawl', `${shortNumber(pageCount)} pages`, pageCount));
+    return cards;
+}
 function buildAppleHealthCards(stats) {
     const totalSteps = stats.aggregates.totals.totalSteps ?? 0;
-    const activeMinutes = stats.aggregates.totals.activeMinutes ?? 0;
-    const sleepMinutes = stats.aggregates.totals.sleepMinutes ?? 0;
+    const activeMinutes = stats.aggregates.totals.activeMinutes ??
+        stats.aggregates.totals.exerciseMinutes ??
+        0;
+    const activeDays = stats.aggregates.totals.activeDays ?? 0;
+    const tenKStepDays = stats.aggregates.totals.tenKStepDays ?? 0;
+    const flightsClimbed = stats.aggregates.totals.flightsClimbed ?? 0;
+    const workoutCount = stats.aggregates.totals.workoutCount ?? 0;
+    const workoutHours = stats.aggregates.totals.workoutHours ?? 0;
+    const restingHeartRate = stats.aggregates.totals.restingHeartRate ?? 0;
+    const sleepHours = stats.aggregates.totals.sleepHours ??
+        (stats.aggregates.totals.sleepMinutes ?? 0) / 60;
+    const topWorkoutType = String(stats.aggregates.streaks.topWorkoutType ??
+        stats.aggregates.top_items.find((group) => group.category === 'workouts')?.items?.[0]?.name ??
+        'Workout');
+    const longestExerciseStreak = Number(stats.aggregates.streaks.longestExerciseStreak ?? 0);
+    const bestSleepNightHours = Number(stats.aggregates.streaks.bestSleepNightHours ?? sleepHours);
+    const workouts = stats.aggregates.top_items.find((group) => group.category === 'workouts')?.items ?? [];
     const cards = [
         {
             id: cardId(),
@@ -287,7 +390,7 @@ function buildAppleHealthCards(stats) {
             data: {
                 stat: shortNumber(totalSteps),
                 value: 'Steps tracked',
-                comparison: `${shortNumber(activeMinutes)} active minutes and ${shortNumber(Math.round(sleepMinutes / 60))} hours of sleep rounded out the year.`,
+                comparison: `${shortNumber(tenKStepDays)} ten-thousand-step days and ${shortNumber(workoutCount)} workouts made this a real movement year.`,
             },
         },
         {
@@ -295,18 +398,31 @@ function buildAppleHealthCards(stats) {
             type: 'insight',
             service: 'apple_health',
             data: {
-                headline: 'Your HealthKit data stayed on-device while still powering this recap',
+                headline: longestExerciseStreak > 0
+                    ? `${topWorkoutType} led a ${shortNumber(longestExerciseStreak)}-day streak, with ${shortNumber(Math.round(workoutHours))} workout hours logged`
+                    : `HealthKit captured ${shortNumber(activeDays)} active days and ${shortNumber(Math.round(sleepHours))} hours of sleep on average`,
                 supportingData: [
-                    { label: 'ACTIVE MIN', value: shortNumber(activeMinutes) },
-                    { label: 'SLEEP HRS', value: shortNumber(Math.round(sleepMinutes / 60)) },
+                    { label: 'ACTIVE DAYS', value: shortNumber(activeDays) },
+                    { label: 'BEST SLEEP', value: `${bestSleepNightHours.toFixed(1)}H` },
+                    ...(restingHeartRate > 0
+                        ? [{ label: 'RESTING HR', value: `${shortNumber(Math.round(restingHeartRate))} BPM` }]
+                        : [{ label: 'FLIGHTS', value: shortNumber(flightsClimbed) }]),
                 ],
             },
         },
     ];
+    const topWorkouts = buildTopList('apple_health', 'Your Top Workouts', workouts, (count) => (count > 0 ? `${shortNumber(count)} sessions` : 'Logged'));
+    if (topWorkouts)
+        cards.push(topWorkouts);
     const chart = buildChart('apple_health', stats);
     if (chart)
         cards.push(chart);
-    cards.push(buildCommunity('apple_health', 'daily activity', `${shortNumber(activeMinutes)} minutes`, activeMinutes));
+    const comparison = buildComparison('apple_health', stats, 'You vs Previous Range');
+    if (comparison)
+        cards.push(comparison);
+    cards.push(buildCommunity('apple_health', 'daily activity', tenKStepDays > 0
+        ? `${shortNumber(tenKStepDays)} days over 10K`
+        : `${shortNumber(activeMinutes)} active minutes`, tenKStepDays > 0 ? tenKStepDays : activeMinutes));
     return cards;
 }
 const builders = {
@@ -315,6 +431,8 @@ const builders = {
     fitbit: buildFitbitCards,
     lastfm: buildLastfmCards,
     steam: buildSteamCards,
+    github: buildGitHubCards,
+    notion: buildNotionCards,
     apple_health: buildAppleHealthCards,
 };
 function buildShareSummary(stats) {
@@ -331,6 +449,10 @@ function buildShareSummary(stats) {
                 return `${serviceStats.aggregates.streaks.topArtist ?? 'your top artist'} on top`;
             case 'steam':
                 return `${shortNumber(serviceStats.aggregates.totals.totalHours ?? 0)} hours played`;
+            case 'github':
+                return `${shortNumber(serviceStats.aggregates.totals.starsEarned ?? 0)} stars earned`;
+            case 'notion':
+                return `${shortNumber(serviceStats.aggregates.totals.pageCount ?? 0)} pages indexed`;
             default:
                 return serviceStats.service;
         }

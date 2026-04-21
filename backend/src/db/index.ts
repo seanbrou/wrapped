@@ -6,7 +6,7 @@ import { Pool, type PoolClient } from 'pg';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { appConfig } from '../services/config.js';
-import type { ServiceConnectionRecord, ServiceId, WrappedSession } from '../types/index.js';
+import type { ServiceConnectionRecord, ServiceId, SyncJobRecord, SyncJobStatus, WrappedSession } from '../types/index.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const databaseUrl = process.env.DATABASE_URL?.trim();
@@ -165,6 +165,57 @@ const migrations: Migration[] = [
       `,
     ],
   },
+  {
+    version: 2,
+    statements: [
+      `
+      CREATE TABLE IF NOT EXISTS sync_jobs (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        service TEXT NOT NULL,
+        status TEXT NOT NULL,
+        period_start DATE NOT NULL,
+        period_end DATE NOT NULL,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        max_attempts INTEGER NOT NULL DEFAULT 3,
+        next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        started_at TIMESTAMPTZ,
+        completed_at TIMESTAMPTZ,
+        error_message TEXT,
+        stats_json TEXT,
+        created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+      )
+      `,
+      `
+      CREATE INDEX IF NOT EXISTS sync_jobs_pending_idx
+      ON sync_jobs (status, next_attempt_at, created_at)
+      `,
+    ],
+  },
+  {
+    version: 3,
+    statements: [
+      `
+      ALTER TABLE sync_jobs ADD COLUMN lease_expires_at TIMESTAMPTZ
+      `,
+      `
+      ALTER TABLE sync_jobs ADD COLUMN worker_id TEXT
+      `,
+      `
+      CREATE TABLE IF NOT EXISTS sync_provider_state (
+        service TEXT PRIMARY KEY,
+        next_available_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+      )
+      `,
+      `
+      CREATE INDEX IF NOT EXISTS sync_jobs_service_status_idx
+      ON sync_jobs (service, status, next_attempt_at)
+      `,
+    ],
+  },
 ];
 
 type QueryRunner = {
@@ -274,7 +325,18 @@ async function applyMigrations() {
     if (applied.has(migration.version)) continue;
     await withTransaction(async (tx) => {
       for (const statement of migration.statements) {
-        await tx.run(statement);
+        try {
+          await tx.run(statement);
+        } catch (error) {
+          const message = String(error);
+          const isDuplicateColumn =
+            message.includes('duplicate column name') ||
+            message.includes('already exists') ||
+            message.includes('42701');
+          if (!isDuplicateColumn) {
+            throw error;
+          }
+        }
       }
       await tx.run('INSERT INTO schema_migrations (version) VALUES (?)', [migration.version]);
     });
@@ -354,6 +416,26 @@ type WrappedSessionRow = {
   created_at: string;
 };
 
+type SyncJobRow = {
+  id: string;
+  user_id: string;
+  service: ServiceId;
+  status: SyncJobStatus;
+  period_start: string;
+  period_end: string;
+  attempts: number;
+  max_attempts: number;
+  next_attempt_at: string;
+  lease_expires_at: string | null;
+  worker_id: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  error_message: string | null;
+  stats_json: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 function mapConnection(row: ConnectedServiceRow): ServiceConnectionRecord {
   return {
     id: row.id,
@@ -385,6 +467,27 @@ function mapWrappedSession(row: WrappedSessionRow): WrappedSession {
     templateName: row.template_name,
     accentKey: row.accent_key,
     createdAt: row.created_at,
+  };
+}
+
+function mapSyncJob(row: SyncJobRow): SyncJobRecord {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    service: row.service,
+    status: row.status,
+    periodStart: row.period_start,
+    periodEnd: row.period_end,
+    attempts: row.attempts,
+    maxAttempts: row.max_attempts,
+    nextAttemptAt: row.next_attempt_at,
+    leaseExpiresAt: row.lease_expires_at,
+    startedAt: row.started_at,
+    completedAt: row.completed_at,
+    errorMessage: row.error_message,
+    stats: parseJson(row.stats_json, null),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
   };
 }
 
@@ -836,6 +939,211 @@ export const syncLogs = {
   },
 };
 
+export const syncJobs = {
+  async create(input: {
+    userId: string;
+    service: ServiceId;
+    periodStart: string;
+    periodEnd: string;
+    maxAttempts?: number;
+  }) {
+    const existing = await runner.get<SyncJobRow>(
+      `
+      SELECT *
+      FROM sync_jobs
+      WHERE user_id = ?
+        AND service = ?
+        AND period_start = ?
+        AND period_end = ?
+        AND status IN ('pending', 'running')
+      ORDER BY created_at DESC
+      LIMIT 1
+      `,
+      [input.userId, input.service, input.periodStart, input.periodEnd],
+    );
+
+    if (existing) {
+      return mapSyncJob(existing);
+    }
+
+    const id = crypto.randomUUID();
+    await runner.run(
+      `
+      INSERT INTO sync_jobs (
+        id,
+        user_id,
+        service,
+        status,
+        period_start,
+        period_end,
+        attempts,
+        max_attempts,
+        next_attempt_at,
+        lease_expires_at,
+        worker_id
+      )
+      VALUES (?, ?, ?, 'pending', ?, ?, 0, ?, CURRENT_TIMESTAMP, NULL, NULL)
+      `,
+      [id, input.userId, input.service, input.periodStart, input.periodEnd, input.maxAttempts ?? 3],
+    );
+    return (await this.getById(id))!;
+  },
+
+  async getById(id: string) {
+    const row = await runner.get<SyncJobRow>('SELECT * FROM sync_jobs WHERE id = ? LIMIT 1', [id]);
+    return row ? mapSyncJob(row) : null;
+  },
+
+  async getForUser(id: string, userId: string) {
+    const row = await runner.get<SyncJobRow>(
+      'SELECT * FROM sync_jobs WHERE id = ? AND user_id = ? LIMIT 1',
+      [id, userId],
+    );
+    return row ? mapSyncJob(row) : null;
+  },
+
+  async listForUser(userId: string, limit = 20) {
+    const rows = await runner.all<SyncJobRow>(
+      `
+      SELECT *
+      FROM sync_jobs
+      WHERE user_id = ?
+      ORDER BY created_at DESC
+      LIMIT ?
+      `,
+      [userId, limit],
+    );
+    return rows.map(mapSyncJob);
+  },
+
+  async recoverExpiredLeases() {
+    await runner.run(
+      `
+      UPDATE sync_jobs
+      SET status = 'pending',
+          started_at = NULL,
+          worker_id = NULL,
+          lease_expires_at = NULL,
+          next_attempt_at = CURRENT_TIMESTAMP,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE status = 'running'
+        AND lease_expires_at IS NOT NULL
+        AND lease_expires_at <= CURRENT_TIMESTAMP
+      `,
+    );
+  },
+
+  async claimNextRunnable(input: { workerId: string; leaseExpiresAt: string }) {
+    return withTransaction(async (tx) => {
+      const claimed = await tx.get<SyncJobRow>(
+        `
+        WITH candidate AS (
+          SELECT sj.id, sj.service
+          FROM sync_jobs sj
+          LEFT JOIN sync_provider_state sps
+            ON sps.service = sj.service
+          WHERE sj.status = 'pending'
+            AND sj.next_attempt_at <= CURRENT_TIMESTAMP
+            AND COALESCE(sps.next_available_at, CURRENT_TIMESTAMP) <= CURRENT_TIMESTAMP
+            AND NOT EXISTS (
+              SELECT 1
+              FROM sync_jobs running
+              WHERE running.service = sj.service
+                AND running.status = 'running'
+                AND (
+                  running.lease_expires_at IS NULL OR
+                  running.lease_expires_at > CURRENT_TIMESTAMP
+                )
+            )
+          ORDER BY sj.created_at ASC
+          LIMIT 1
+        )
+        UPDATE sync_jobs
+        SET status = 'running',
+            started_at = CURRENT_TIMESTAMP,
+            updated_at = CURRENT_TIMESTAMP,
+            attempts = attempts + 1,
+            worker_id = ?,
+            lease_expires_at = ?
+        WHERE id = (SELECT id FROM candidate)
+          AND status = 'pending'
+        RETURNING *
+        `,
+        [input.workerId, input.leaseExpiresAt],
+      );
+
+      if (!claimed) return null;
+
+      const row = await tx.get<SyncJobRow>(
+        `
+        SELECT *
+        FROM sync_jobs
+        WHERE id = ?
+        `,
+        [claimed.id],
+      );
+
+      return row ? mapSyncJob(row) : null;
+    });
+  },
+
+  async markCompleted(id: string, stats: object) {
+    await runner.run(
+      `
+      UPDATE sync_jobs
+      SET status = 'completed',
+          completed_at = CURRENT_TIMESTAMP,
+          error_message = NULL,
+          stats_json = ?,
+          worker_id = NULL,
+          lease_expires_at = NULL,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+      `,
+      [JSON.stringify(stats), id],
+    );
+  },
+
+  async markFailed(id: string, input: { errorMessage: string; attempts: number; maxAttempts: number; nextAttemptAt: string }) {
+    const shouldRetry = input.attempts < input.maxAttempts;
+    const status: SyncJobStatus = shouldRetry ? 'pending' : 'failed';
+
+    await runner.run(
+      `
+      UPDATE sync_jobs
+      SET status = ?,
+          error_message = ?,
+          next_attempt_at = ?,
+          worker_id = NULL,
+          lease_expires_at = NULL,
+          completed_at = CASE WHEN ? = 'failed' THEN CURRENT_TIMESTAMP ELSE completed_at END,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+      `,
+      [status, input.errorMessage, input.nextAttemptAt, status, id],
+    );
+  },
+};
+
+export const syncProviderState = {
+  async bumpCooldown(service: ServiceId, nextAvailableAt: string) {
+    await runner.run(
+      `
+      INSERT INTO sync_provider_state (service, next_available_at, updated_at)
+      VALUES (?, ?, CURRENT_TIMESTAMP)
+      ON CONFLICT(service) DO UPDATE SET
+        next_available_at = CASE
+          WHEN excluded.next_available_at > sync_provider_state.next_available_at
+            THEN excluded.next_available_at
+          ELSE sync_provider_state.next_available_at
+        END,
+        updated_at = CURRENT_TIMESTAMP
+      `,
+      [service, nextAvailableAt],
+    );
+  },
+};
+
 export const dataDeletion = {
   async deleteAllForUser(userId: string) {
     await withTransaction(async (tx) => {
@@ -848,6 +1156,7 @@ export const dataDeletion = {
       await tx.run('DELETE FROM connected_services WHERE user_id = ?', [userId]);
       await tx.run('DELETE FROM oauth_requests WHERE user_id = ?', [userId]);
       await tx.run('DELETE FROM sync_logs WHERE user_id = ?', [userId]);
+      await tx.run('DELETE FROM sync_jobs WHERE user_id = ?', [userId]);
       await tx.run('DELETE FROM refresh_sessions WHERE user_id = ?', [userId]);
       await users.markDeleted(userId, tx);
     });

@@ -4,7 +4,9 @@ export type SupportedServiceId =
   | 'strava'
   | 'fitbit'
   | 'lastfm'
-  | 'steam';
+  | 'steam'
+  | 'github'
+  | 'notion';
 
 export type DeferredServiceId = 'goodreads' | 'youtube';
 
@@ -164,6 +166,27 @@ export interface ServiceConnectionRecord {
   expiresAt: number | null;
   metadata: Record<string, unknown>;
   deletedAt: string | null;
+}
+
+export type SyncJobStatus = 'pending' | 'running' | 'completed' | 'failed';
+
+export interface SyncJobRecord {
+  id: string;
+  userId: string;
+  service: ServiceId;
+  status: SyncJobStatus;
+  periodStart: string;
+  periodEnd: string;
+  attempts: number;
+  maxAttempts: number;
+  nextAttemptAt: string;
+  leaseExpiresAt: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
+  errorMessage: string | null;
+  stats: ServiceStats | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface ConnectStartContext {

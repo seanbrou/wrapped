@@ -9,6 +9,7 @@ import { wrappedRoutes } from './routes/wrapped.js';
 import { databaseInfo } from './db/index.js';
 import { appConfig, requirePublicApiBaseUrl } from './services/config.js';
 import { warmAiGateway } from './services/insightGenerator.js';
+import { startSyncQueueWorker, stopSyncQueueWorker } from './services/syncQueue.js';
 
 const fastify = Fastify({
   logger: { level: 'info' },
@@ -198,6 +199,7 @@ const entrypoint = process.argv[1] ? fileURLToPath(import.meta.url) === process.
 if (entrypoint) {
   try {
     await warmAiGateway(console);
+    startSyncQueueWorker();
     await fastify.listen({ port: PORT, host: HOST });
     console.log(`[wrapped] Server running at http://${HOST}:${PORT}`);
     console.log(`[wrapped] Database: ${databaseInfo.kind} (${databaseInfo.connectionLabel})`);
@@ -219,4 +221,10 @@ if (entrypoint) {
     console.error('[wrapped] Server failed to start:', err);
     process.exit(1);
   }
+}
+
+for (const signal of ['SIGINT', 'SIGTERM'] as const) {
+  process.on(signal, () => {
+    stopSyncQueueWorker();
+  });
 }
