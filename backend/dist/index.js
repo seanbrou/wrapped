@@ -7,7 +7,6 @@ import { authRoutes } from './routes/auth.js';
 import { wrappedRoutes } from './routes/wrapped.js';
 import { databaseInfo } from './db/index.js';
 import { appConfig, requirePublicApiBaseUrl } from './services/config.js';
-import { warmAiGateway } from './services/insightGenerator.js';
 import { startSyncQueueWorker, stopSyncQueueWorker } from './services/syncQueue.js';
 const fastify = Fastify({
     logger: { level: 'info' },
@@ -160,7 +159,6 @@ export default fastify;
 const entrypoint = process.argv[1] ? fileURLToPath(import.meta.url) === process.argv[1] : false;
 if (entrypoint) {
     try {
-        await warmAiGateway(console);
         startSyncQueueWorker();
         await fastify.listen({ port: PORT, host: HOST });
         console.log(`[wrapped] Server running at http://${HOST}:${PORT}`);

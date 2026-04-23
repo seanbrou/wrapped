@@ -21,6 +21,8 @@ function percentileFromMetric(value: number) {
   return Math.max(1, 25 - bounded);
 }
 
+/* ─── Card builders ───────────────────────────────────────────────────── */
+
 function buildTopList(
   service: ServiceId,
   title: string,
@@ -91,6 +93,67 @@ function buildCommunity(service: ServiceId, metric: string, value: string, score
   };
 }
 
+function buildFunFact(service: ServiceId, fact: string): WrappedCard {
+  return {
+    id: cardId(),
+    type: 'fun_fact',
+    service,
+    data: { fact },
+  };
+}
+
+function buildStreak(service: ServiceId, streak: string, description: string, days?: number): WrappedCard {
+  return {
+    id: cardId(),
+    type: 'streak',
+    service,
+    data: { streak, description, days },
+  };
+}
+
+function buildTrend(service: ServiceId, trend: string, direction: 'up' | 'down' | 'flat', context: string): WrappedCard {
+  return {
+    id: cardId(),
+    type: 'trend',
+    service,
+    data: { trend, direction, context },
+  };
+}
+
+function buildSuperlative(service: ServiceId, superlative: string, stat: string, value: string): WrappedCard {
+  return {
+    id: cardId(),
+    type: 'superlative',
+    service,
+    data: { superlative, stat, value },
+  };
+}
+
+function buildOpener(serviceCount: number, period: string): WrappedCard {
+  return {
+    id: cardId(),
+    type: 'opener',
+    service: 'all',
+    data: {
+      headline: serviceCount === 1 ? 'One service. Infinite data.' : `${serviceCount} services. One story.`,
+      subtitle: 'Your year, decoded.',
+      serviceCount,
+      period,
+    },
+  };
+}
+
+function buildCrossServiceCard(headline: string, description: string, services: string[]): WrappedCard {
+  return {
+    id: cardId(),
+    type: 'cross_service',
+    service: 'all',
+    data: { headline, description, servicesInvolved: services },
+  };
+}
+
+/* ─── Service-specific card builders ─────────────────────────────────────────── */
+
 function buildSpotifyCards(stats: ServiceStats, copy?: ServiceCopySuggestions): WrappedCard[] {
   const artists = stats.aggregates.top_items.find((group) => group.category === 'artists')?.items ?? [];
   const tracks = stats.aggregates.top_items.find((group) => group.category === 'tracks')?.items ?? [];
@@ -98,6 +161,7 @@ function buildSpotifyCards(stats: ServiceStats, copy?: ServiceCopySuggestions): 
   const topArtist = artists[0]?.name ?? 'No artist';
   const topGenre = genres[0]?.name ?? 'genre-hopping';
   const sample = stats.aggregates.totals.recentPlaysSample ?? tracks.length;
+  const totalHours = stats.aggregates.totals.totalHours ?? 0;
 
   const cards: WrappedCard[] = [
     {
@@ -131,10 +195,21 @@ function buildSpotifyCards(stats: ServiceStats, copy?: ServiceCopySuggestions): 
     },
   });
 
+  if (copy?.funFact) cards.push(buildFunFact('spotify', copy.funFact));
+  if (copy?.streakHighlight) cards.push(buildStreak('spotify', copy.streakHighlight, 'Consistency matters'));
+  if (copy?.superlative) cards.push(buildSuperlative('spotify', copy.superlative, 'Top Artist', topArtist));
+
   const chart = buildChart('spotify', stats);
   if (chart) cards.push(chart);
 
   cards.push(buildCommunity('spotify', 'artist affinity', `${sample} recent plays sampled`, sample));
+
+  if (copy?.trendObservation) cards.push(buildTrend('spotify', copy.trendObservation, 'up', 'Listening pattern'));
+
+  if (totalHours > 0) {
+    cards.push(buildSuperlative('spotify', 'Total listening time', 'Hours', `${shortNumber(totalHours)}H`));
+  }
+
   return cards;
 }
 
@@ -177,6 +252,10 @@ function buildStravaCards(stats: ServiceStats, copy?: ServiceCopySuggestions): W
     },
   });
 
+  if (copy?.funFact) cards.push(buildFunFact('strava', copy.funFact));
+  if (copy?.streakHighlight) cards.push(buildStreak('strava', copy.streakHighlight, 'Keep the chain going'));
+  if (copy?.superlative) cards.push(buildSuperlative('strava', copy.superlative, 'Distance', `${shortNumber(Math.round(distanceKm))} km`));
+
   const chart = buildChart('strava', stats);
   if (chart) cards.push(chart);
 
@@ -184,6 +263,9 @@ function buildStravaCards(stats: ServiceStats, copy?: ServiceCopySuggestions): W
   if (comparison) cards.push(comparison);
 
   cards.push(buildCommunity('strava', 'distance', `${shortNumber(Math.round(distanceKm))} km`, distanceKm));
+
+  if (copy?.trendObservation) cards.push(buildTrend('strava', copy.trendObservation, 'up', 'Activity pattern'));
+
   return cards;
 }
 
@@ -221,6 +303,10 @@ function buildFitbitCards(stats: ServiceStats, copy?: ServiceCopySuggestions): W
     },
   ];
 
+  if (copy?.funFact) cards.push(buildFunFact('fitbit', copy.funFact));
+  if (copy?.streakHighlight) cards.push(buildStreak('fitbit', copy.streakHighlight, 'Daily consistency'));
+  if (copy?.superlative) cards.push(buildSuperlative('fitbit', copy.superlative, 'Total Steps', shortNumber(totalSteps)));
+
   const chart = buildChart('fitbit', stats);
   if (chart) cards.push(chart);
 
@@ -228,6 +314,9 @@ function buildFitbitCards(stats: ServiceStats, copy?: ServiceCopySuggestions): W
   if (comparison) cards.push(comparison);
 
   cards.push(buildCommunity('fitbit', 'daily movement', `${shortNumber(totalSteps)} steps`, totalSteps));
+
+  if (copy?.trendObservation) cards.push(buildTrend('fitbit', copy.trendObservation, 'up', 'Activity trend'));
+
   return cards;
 }
 
@@ -269,10 +358,17 @@ function buildLastfmCards(stats: ServiceStats, copy?: ServiceCopySuggestions): W
     },
   });
 
+  if (copy?.funFact) cards.push(buildFunFact('lastfm', copy.funFact));
+  if (copy?.streakHighlight) cards.push(buildStreak('lastfm', copy.streakHighlight, 'Listening streak'));
+  if (copy?.superlative) cards.push(buildSuperlative('lastfm', copy.superlative, 'Top Artist', topArtist));
+
   const chart = buildChart('lastfm', stats);
   if (chart) cards.push(chart);
 
   cards.push(buildCommunity('lastfm', 'scrobble depth', `${sample} recent tracks sampled`, sample));
+
+  if (copy?.trendObservation) cards.push(buildTrend('lastfm', copy.trendObservation, 'up', 'Listening trend'));
+
   return cards;
 }
 
@@ -314,10 +410,17 @@ function buildSteamCards(stats: ServiceStats, copy?: ServiceCopySuggestions): Wr
     },
   });
 
+  if (copy?.funFact) cards.push(buildFunFact('steam', copy.funFact));
+  if (copy?.streakHighlight) cards.push(buildStreak('steam', copy.streakHighlight, 'Gaming streak'));
+  if (copy?.superlative) cards.push(buildSuperlative('steam', copy.superlative, 'Top Game', topGame));
+
   const chart = buildChart('steam', stats);
   if (chart) cards.push(chart);
 
   cards.push(buildCommunity('steam', 'playtime', `${shortNumber(totalHours)} hours`, totalHours));
+
+  if (copy?.trendObservation) cards.push(buildTrend('steam', copy.trendObservation, 'up', 'Gaming trend'));
+
   return cards;
 }
 
@@ -366,6 +469,10 @@ function buildGitHubCards(stats: ServiceStats, copy?: ServiceCopySuggestions): W
     },
   });
 
+  if (copy?.funFact) cards.push(buildFunFact('github', copy.funFact));
+  if (copy?.streakHighlight) cards.push(buildStreak('github', copy.streakHighlight, 'Code streak'));
+  if (copy?.superlative) cards.push(buildSuperlative('github', copy.superlative, 'Top Repo', topRepo));
+
   const chart = buildChart('github', stats);
   if (chart) cards.push(chart);
 
@@ -373,6 +480,9 @@ function buildGitHubCards(stats: ServiceStats, copy?: ServiceCopySuggestions): W
   if (comparison) cards.push(comparison);
 
   cards.push(buildCommunity('github', 'open-source pull', `${shortNumber(stars)} repo stars`, stars));
+
+  if (copy?.trendObservation) cards.push(buildTrend('github', copy.trendObservation, 'up', 'Contribution trend'));
+
   return cards;
 }
 
@@ -422,6 +532,10 @@ function buildNotionCards(stats: ServiceStats, copy?: ServiceCopySuggestions): W
     },
   });
 
+  if (copy?.funFact) cards.push(buildFunFact('notion', copy.funFact));
+  if (copy?.streakHighlight) cards.push(buildStreak('notion', copy.streakHighlight, 'Editing streak'));
+  if (copy?.superlative) cards.push(buildSuperlative('notion', copy.superlative, 'Workspace', workspaceName));
+
   const chart = buildChart('notion', stats);
   if (chart) cards.push(chart);
 
@@ -429,10 +543,13 @@ function buildNotionCards(stats: ServiceStats, copy?: ServiceCopySuggestions): W
   if (comparison) cards.push(comparison);
 
   cards.push(buildCommunity('notion', 'workspace sprawl', `${shortNumber(pageCount)} pages`, pageCount));
+
+  if (copy?.trendObservation) cards.push(buildTrend('notion', copy.trendObservation, 'up', 'Organization trend'));
+
   return cards;
 }
 
-function buildAppleHealthCards(stats: ServiceStats): WrappedCard[] {
+function buildAppleHealthCards(stats: ServiceStats, copy?: ServiceCopySuggestions): WrappedCard[] {
   const totalSteps = stats.aggregates.totals.totalSteps ?? 0;
   const activeMinutes =
     stats.aggregates.totals.activeMinutes ??
@@ -464,7 +581,7 @@ function buildAppleHealthCards(stats: ServiceStats): WrappedCard[] {
       data: {
         stat: shortNumber(totalSteps),
         value: 'Steps tracked',
-        comparison: `${shortNumber(tenKStepDays)} ten-thousand-step days and ${shortNumber(workoutCount)} workouts made this a real movement year.`,
+        comparison: copy?.heroComparison ?? `${shortNumber(tenKStepDays)} ten-thousand-step days and ${shortNumber(workoutCount)} workouts made this a real movement year.`,
       },
     },
     {
@@ -473,19 +590,25 @@ function buildAppleHealthCards(stats: ServiceStats): WrappedCard[] {
       service: 'apple_health',
       data: {
         headline:
-          longestExerciseStreak > 0
+          copy?.insightHeadline ??
+          (longestExerciseStreak > 0
             ? `${topWorkoutType} led a ${shortNumber(longestExerciseStreak)}-day streak, with ${shortNumber(Math.round(workoutHours))} workout hours logged`
-            : `HealthKit captured ${shortNumber(activeDays)} active days and ${shortNumber(Math.round(sleepHours))} hours of sleep on average`,
-        supportingData: [
-          { label: 'ACTIVE DAYS', value: shortNumber(activeDays) },
-          { label: 'BEST SLEEP', value: `${bestSleepNightHours.toFixed(1)}H` },
-          ...(restingHeartRate > 0
-            ? [{ label: 'RESTING HR', value: `${shortNumber(Math.round(restingHeartRate))} BPM` }]
-            : [{ label: 'FLIGHTS', value: shortNumber(flightsClimbed) }]),
-        ],
+            : `HealthKit captured ${shortNumber(activeDays)} active days and ${shortNumber(Math.round(sleepHours))} hours of sleep on average`),
+        supportingData:
+          copy?.insightSupportingData ?? [
+            { label: 'ACTIVE DAYS', value: shortNumber(activeDays) },
+            { label: 'BEST SLEEP', value: `${bestSleepNightHours.toFixed(1)}H` },
+            ...(restingHeartRate > 0
+              ? [{ label: 'RESTING HR', value: `${shortNumber(Math.round(restingHeartRate))} BPM` }]
+              : [{ label: 'FLIGHTS', value: shortNumber(flightsClimbed) }]),
+          ],
       },
     },
   ];
+
+  if (copy?.funFact) cards.push(buildFunFact('apple_health', copy.funFact));
+  if (copy?.streakHighlight) cards.push(buildStreak('apple_health', copy.streakHighlight, 'Health streak', longestExerciseStreak || undefined));
+  if (copy?.superlative) cards.push(buildSuperlative('apple_health', copy.superlative, 'Top Workout', topWorkoutType));
 
   const topWorkouts = buildTopList(
     'apple_health',
@@ -511,6 +634,9 @@ function buildAppleHealthCards(stats: ServiceStats): WrappedCard[] {
       tenKStepDays > 0 ? tenKStepDays : activeMinutes,
     ),
   );
+
+  if (copy?.trendObservation) cards.push(buildTrend('apple_health', copy.trendObservation, 'up', 'Health trend'));
+
   return cards;
 }
 
@@ -555,10 +681,17 @@ function buildTraktCards(stats: ServiceStats, copy?: ServiceCopySuggestions): Wr
     },
   });
 
+  if (copy?.funFact) cards.push(buildFunFact('trakt', copy.funFact));
+  if (copy?.streakHighlight) cards.push(buildStreak('trakt', copy.streakHighlight, 'Binge streak'));
+  if (copy?.superlative) cards.push(buildSuperlative('trakt', copy.superlative, 'Top Show', topShow));
+
   const chart = buildChart('trakt', stats);
   if (chart) cards.push(chart);
 
   cards.push(buildCommunity('trakt', 'watch time', `${shortNumber(totalHours)} hours`, totalHours));
+
+  if (copy?.trendObservation) cards.push(buildTrend('trakt', copy.trendObservation, 'up', 'Viewing trend'));
+
   return cards;
 }
 
@@ -599,10 +732,17 @@ function buildRedditCards(stats: ServiceStats, copy?: ServiceCopySuggestions): W
     },
   });
 
+  if (copy?.funFact) cards.push(buildFunFact('reddit', copy.funFact));
+  if (copy?.streakHighlight) cards.push(buildStreak('reddit', copy.streakHighlight, 'Engagement streak'));
+  if (copy?.superlative) cards.push(buildSuperlative('reddit', copy.superlative, 'Karma', shortNumber(totalKarma)));
+
   const chart = buildChart('reddit', stats);
   if (chart) cards.push(chart);
 
   cards.push(buildCommunity('reddit', 'karma power', `${shortNumber(totalKarma)} karma`, totalKarma));
+
+  if (copy?.trendObservation) cards.push(buildTrend('reddit', copy.trendObservation, 'up', 'Engagement trend'));
+
   return cards;
 }
 
@@ -644,10 +784,17 @@ function buildRescueTimeCards(stats: ServiceStats, copy?: ServiceCopySuggestions
     },
   });
 
+  if (copy?.funFact) cards.push(buildFunFact('rescuetime', copy.funFact));
+  if (copy?.streakHighlight) cards.push(buildStreak('rescuetime', copy.streakHighlight, 'Focus streak'));
+  if (copy?.superlative) cards.push(buildSuperlative('rescuetime', copy.superlative, 'Pulse', String(avgPulse)));
+
   const chart = buildChart('rescuetime', stats);
   if (chart) cards.push(chart);
 
   cards.push(buildCommunity('rescuetime', 'productivity', `${avgPulse} pulse`, avgPulse));
+
+  if (copy?.trendObservation) cards.push(buildTrend('rescuetime', copy.trendObservation, productiveHours > distractingHours ? 'up' : 'down', 'Productivity trend'));
+
   return cards;
 }
 
@@ -688,10 +835,17 @@ function buildTodoistCards(stats: ServiceStats, copy?: ServiceCopySuggestions): 
     },
   });
 
+  if (copy?.funFact) cards.push(buildFunFact('todoist', copy.funFact));
+  if (copy?.streakHighlight) cards.push(buildStreak('todoist', copy.streakHighlight, 'Completion streak'));
+  if (copy?.superlative) cards.push(buildSuperlative('todoist', copy.superlative, 'Tasks', shortNumber(tasksCompleted)));
+
   const chart = buildChart('todoist', stats);
   if (chart) cards.push(chart);
 
   cards.push(buildCommunity('todoist', 'task mastery', `${shortNumber(tasksCompleted)} tasks`, tasksCompleted));
+
+  if (copy?.trendObservation) cards.push(buildTrend('todoist', copy.trendObservation, 'up', 'Completion trend'));
+
   return cards;
 }
 
@@ -709,6 +863,8 @@ const builders: Partial<Record<ServiceId, (stats: ServiceStats, copy?: ServiceCo
   rescuetime: buildRescueTimeCards,
   todoist: buildTodoistCards,
 };
+
+/* ─── Share summary ────────────────────────────────────────────────────────── */
 
 function buildShareSummary(stats: ServiceStats[]) {
   const fragments = stats.map((serviceStats) => {
@@ -741,28 +897,58 @@ function buildShareSummary(stats: ServiceStats[]) {
     }
   });
 
-  return fragments.filter(Boolean).slice(0, 3).join(' · ');
+  return fragments.filter(Boolean).join(' · ');
 }
+
+/* ─── Main selector with narrative flow ─────────────────────────────────────── */
 
 export function selectCards(
   stats: ServiceStats[],
   copyByService: Partial<Record<ServiceId, ServiceCopySuggestions>> = {},
-  maxCards = 15,
+  crossServiceInsights: Array<{ headline: string; description: string; servicesInvolved: string[] }> = [],
+  maxCards = 25,
 ): WrappedCard[] {
   const cards: WrappedCard[] = [];
 
+  // 1) Opener card
+  const periodLabel = stats[0]?.period ? `${stats[0].period.start} to ${stats[0].period.end}` : 'this period';
+  cards.push(buildOpener(stats.length, periodLabel));
+
+  // 2) Build all service cards
+  const serviceCards: Map<ServiceId, WrappedCard[]> = new Map();
   for (const serviceStats of stats) {
     const builder = builders[serviceStats.service];
     if (!builder) continue;
-
     const built = builder(serviceStats, copyByService[serviceStats.service]);
-    for (const card of built) {
-      if (cards.length >= maxCards - 1) break;
-      cards.push(card);
-    }
-    if (cards.length >= maxCards - 1) break;
+    serviceCards.set(serviceStats.service, built);
   }
 
+  // 3) Interleave service cards for narrative flow
+  // Take round-robin from each service to mix things up
+  const serviceIds = Array.from(serviceCards.keys());
+  let round = 0;
+  let addedInRound = 1;
+
+  while (addedInRound > 0 && cards.length < maxCards - 2) {
+    addedInRound = 0;
+    for (const serviceId of serviceIds) {
+      const built = serviceCards.get(serviceId)!;
+      if (round < built.length) {
+        cards.push(built[round]);
+        addedInRound++;
+        if (cards.length >= maxCards - 2) break;
+      }
+    }
+    round++;
+  }
+
+  // 4) Cross-service insight cards (insert before the share card)
+  for (const insight of crossServiceInsights.slice(0, 2)) {
+    if (cards.length >= maxCards - 1) break;
+    cards.push(buildCrossServiceCard(insight.headline, insight.description, insight.servicesInvolved));
+  }
+
+  // 5) Share card (always last)
   if (stats.length > 0) {
     const shareHeadline =
       copyByService[stats[0].service]?.shareHeadline ??

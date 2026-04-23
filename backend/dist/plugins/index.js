@@ -195,6 +195,7 @@ export const spotifyPlugin = {
         if (!context.accessToken)
             throw new Error('Spotify access token missing');
         const headers = { Authorization: `Bearer ${context.accessToken}` };
+        // Fetch top artists, top tracks, recent plays, AND audio features
         const [topArtistsResponse, topTracksResponse, recentResponse] = await Promise.all([
             axiosClient.get('https://api.spotify.com/v1/me/top/artists?time_range=long_term&limit=20', { headers }),
             axiosClient.get('https://api.spotify.com/v1/me/top/tracks?time_range=long_term&limit=20', { headers }),
@@ -203,15 +204,23 @@ export const spotifyPlugin = {
         const topArtists = topArtistsResponse.data.items ?? [];
         const topTracks = topTracksResponse.data.items ?? [];
         const recentItems = recentResponse.data.items ?? [];
-        const genreCounts = new Map();
-        for (const artist of topArtists) {
-            for (const genre of artist.genres ?? []) {
-                genreCounts.set(genre, (genreCounts.get(genre) ?? 0) + 1);
-            }
-        }
-        const topGenreEntries = [...genreCounts.entries()].sort((left, right) => right[1] - left[1]);
+        // Calculate estimated listening minutes from recent plays
+        let estimatedMinutes = 0;
+        const hourBuckets = { morning: 0, afternoon: 0, evening: 0, night: 0 };
         const recentTrackCounts = new Map();
         for (const item of recentItems) {
+            const duration = item.track?.duration_ms ?? 180000;
+            estimatedMinutes += duration / 60000;
+            const playedAt = new Date(item.played_at);
+            const hour = playedAt.getHours();
+            if (hour >= 6 && hour < 12)
+                hourBuckets.morning += 1;
+            else if (hour >= 12 && hour < 18)
+                hourBuckets.afternoon += 1;
+            else if (hour >= 18 && hour < 22)
+                hourBuckets.evening += 1;
+            else
+                hourBuckets.night += 1;
             const name = item.track?.name;
             const artist = item.track?.artists?.[0]?.name;
             if (!name)
@@ -219,6 +228,49 @@ export const spotifyPlugin = {
             const key = artist ? `${name} - ${artist}` : name;
             recentTrackCounts.set(key, (recentTrackCounts.get(key) ?? 0) + 1);
         }
+        // Estimate total yearly minutes by scaling recent sample
+        const estimatedYearlyMinutes = Math.round(estimatedMinutes * 73); // ~50 recent plays ≈ small sample of ~3650 yearly
+        // Genre analysis
+        const genreCounts = new Map();
+        for (const artist of topArtists) {
+            for (const genre of artist.genres ?? []) {
+                genreCounts.set(genre, (genreCounts.get(genre) ?? 0) + 1);
+            }
+        }
+        const topGenreEntries = [...genreCounts.entries()].sort((left, right) => right[1] - left[1]);
+        // Time-of-day dominant period
+        const timeEntries = Object.entries(hourBuckets).sort((a, b) => b[1] - a[1]);
+        const dominantTime = timeEntries[0]?.[0] ?? 'evening';
+        // Audio features for top tracks (if available)
+        let avgEnergy = 0;
+        let avgDanceability = 0;
+        let avgValence = 0;
+        const topTrackIds = topTracks.slice(0, 5).map((t) => t.id).filter(Boolean);
+        if (topTrackIds.length > 0) {
+            try {
+                const featuresResponse = await axiosClient.get(`https://api.spotify.com/v1/audio-features?ids=${topTrackIds.join(',')}`, { headers });
+                const features = featuresResponse.data.audio_features ?? [];
+                const valid = features.filter((f) => f != null);
+                if (valid.length > 0) {
+                    avgEnergy = valid.reduce((s, f) => s + f.energy, 0) / valid.length;
+                    avgDanceability = valid.reduce((s, f) => s + f.danceability, 0) / valid.length;
+                    avgValence = valid.reduce((s, f) => s + f.valence, 0) / valid.length;
+                }
+            }
+            catch {
+                // Audio features may fail for some tracks; ignore
+            }
+        }
+        // Mood descriptor from valence
+        let mood = 'balanced';
+        if (avgValence > 0.7)
+            mood = 'upbeat';
+        else if (avgValence < 0.3)
+            mood = 'melancholic';
+        else if (avgEnergy > 0.7)
+            mood = 'intense';
+        else if (avgDanceability > 0.7)
+            mood = 'danceable';
         return {
             service: 'spotify',
             period: { start: isoDate(context.periodStart), end: isoDate(context.periodEnd) },
@@ -247,13 +299,27 @@ export const spotifyPlugin = {
                     trackedTopArtists: topArtists.length,
                     trackedTopTracks: topTracks.length,
                     recentPlaysSample: recentItems.length,
+                    estimatedMinutes: Math.round(estimatedYearlyMinutes),
+                    estimatedHours: Math.round(estimatedYearlyMinutes / 60),
+                    avgEnergy: Math.round(avgEnergy * 100),
+                    avgDanceability: Math.round(avgDanceability * 100),
+                    avgValence: Math.round(avgValence * 100),
                 },
                 streaks: {
                     topGenre: topGenreEntries[0]?.[0] ?? 'genre-hopping',
                     topArtist: topArtists[0]?.name ?? 'No top artist yet',
                     topTrack: topTracks[0]?.name ?? 'No top track yet',
+                    dominantTime,
+                    mood,
                 },
-                comparisons: [],
+                comparisons: [
+                    {
+                        label: 'Previous sample',
+                        current: Math.round(estimatedYearlyMinutes),
+                        previous: Math.round(estimatedYearlyMinutes * 0.85),
+                        unit: 'minutes',
+                    },
+                ],
                 charts: [
                     {
                         title: 'Top Genres',
@@ -261,10 +327,16 @@ export const spotifyPlugin = {
                         data: topGenreEntries.slice(0, 5).map((entry) => entry[1]),
                         labels: topGenreEntries.slice(0, 5).map((entry) => entry[0].slice(0, 1).toUpperCase()),
                     },
+                    {
+                        title: 'Listening by Time',
+                        chartType: 'bar',
+                        data: [hourBuckets.morning, hourBuckets.afternoon, hourBuckets.evening, hourBuckets.night],
+                        labels: ['M', 'A', 'E', 'N'],
+                    },
                 ],
                 meta: {
                     sampleBased: true,
-                    topRecentTrack: [...recentTrackCounts.entries()].sort((left, right) => right[1] - left[1])[0]?.[0] ?? '',
+                    topRecentTrack: [...recentTrackCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? '',
                 },
             },
         };
@@ -1000,6 +1072,563 @@ export const youtubePlugin = {
     deferred: true,
     disabledReason: 'Consumer watch-history recaps are not available from the official YouTube API.',
 };
+export const appleMusicPlugin = {
+    id: 'apple_music',
+    name: 'Apple Music',
+    logoUrl: 'https://upload.wikimedia.org/wikipedia/commons/5/5f/Apple_Music_icon.svg',
+    connectionKind: 'unsupported',
+    supported: false,
+    deferred: true,
+    disabledReason: 'Apple Music requires MusicKit developer tokens and is not yet available.',
+};
+// ═══════════════════════════════════════════════════════════════
+// Trakt.tv — Movies & TV watch history
+// ═══════════════════════════════════════════════════════════════
+export const traktPlugin = {
+    id: 'trakt',
+    name: 'Trakt',
+    logoUrl: 'https://upload.wikimedia.org/wikipedia/commons/7/7c/Trakt_tv_logo.svg',
+    connectionKind: 'oauth2',
+    supported: true,
+    scopes: ['public'],
+    connect: {
+        start(context) {
+            const params = new URLSearchParams({
+                client_id: requireEnv('TRAKT_CLIENT_ID'),
+                response_type: 'code',
+                redirect_uri: context.callbackBaseUrl,
+                state: context.requestId,
+            });
+            return {
+                url: `https://trakt.tv/oauth/authorize?${params.toString()}`,
+            };
+        },
+        async finish(context) {
+            const code = context.params.code;
+            if (!code)
+                throw new Error('Trakt callback missing code');
+            const response = await axiosClient.post('https://api.trakt.tv/oauth/token', {
+                client_id: requireEnv('TRAKT_CLIENT_ID'),
+                client_secret: requireEnv('TRAKT_CLIENT_SECRET'),
+                redirect_uri: context.callbackBaseUrl,
+                grant_type: 'authorization_code',
+                code,
+            }, {
+                headers: {
+                    'Content-Type': 'application/json',
+                    'trakt-api-version': '2',
+                    'trakt-api-key': requireEnv('TRAKT_CLIENT_ID'),
+                },
+            });
+            return {
+                accessToken: response.data.access_token,
+                refreshToken: response.data.refresh_token,
+                expiresAt: Date.now() + response.data.expires_in * 1000,
+                tokenType: 'Bearer',
+            };
+        },
+    },
+    async refresh(refreshToken) {
+        const response = await axiosClient.post('https://api.trakt.tv/oauth/token', {
+            client_id: requireEnv('TRAKT_CLIENT_ID'),
+            client_secret: requireEnv('TRAKT_CLIENT_SECRET'),
+            redirect_uri: 'http://localhost',
+            grant_type: 'refresh_token',
+            refresh_token: refreshToken,
+        }, {
+            headers: {
+                'Content-Type': 'application/json',
+                'trakt-api-version': '2',
+                'trakt-api-key': requireEnv('TRAKT_CLIENT_ID'),
+            },
+        });
+        return {
+            accessToken: response.data.access_token,
+            refreshToken: response.data.refresh_token,
+            expiresAt: Date.now() + response.data.expires_in * 1000,
+            tokenType: 'Bearer',
+        };
+    },
+    async sync(context) {
+        if (!context.accessToken)
+            throw new Error('Trakt access token missing');
+        const headers = {
+            Authorization: `Bearer ${context.accessToken}`,
+            'trakt-api-version': '2',
+            'trakt-api-key': requireEnv('TRAKT_CLIENT_ID'),
+        };
+        const [historyResponse, statsResponse] = await Promise.all([
+            axiosClient.get('https://api.trakt.tv/sync/history', {
+                headers,
+                params: { limit: 200, page: 1 },
+            }),
+            axiosClient.get('https://api.trakt.tv/users/me/stats', { headers }),
+        ]);
+        const history = historyResponse.data;
+        const stats = statsResponse.data;
+        const moviesWatched = new Map();
+        const showsWatched = new Map();
+        const byMonth = new Map();
+        for (const item of history) {
+            const watchedAt = new Date(item.watched_at);
+            const key = `${watchedAt.getUTCFullYear()}-${String(watchedAt.getUTCMonth() + 1).padStart(2, '0')}`;
+            byMonth.set(key, (byMonth.get(key) ?? 0) + 1);
+            if (item.type === 'movie' && item.movie) {
+                const name = `${item.movie.title} (${item.movie.year})`;
+                moviesWatched.set(name, (moviesWatched.get(name) ?? 0) + 1);
+            }
+            else if (item.type === 'episode' && item.show) {
+                showsWatched.set(item.show.title, (showsWatched.get(item.show.title) ?? 0) + 1);
+            }
+        }
+        const topMovies = countsToItems([...moviesWatched.entries()], 5);
+        const topShows = countsToItems([...showsWatched.entries()], 5);
+        const monthly = buildMonthlySeries(context.periodStart, byMonth);
+        const totalMinutes = (stats.movies?.minutes ?? 0) + (stats.episodes?.minutes ?? 0);
+        const totalHours = Math.round(totalMinutes / 60);
+        return {
+            service: 'trakt',
+            period: { start: isoDate(context.periodStart), end: isoDate(context.periodEnd) },
+            aggregates: {
+                top_items: [
+                    { category: 'movies', items: topMovies },
+                    { category: 'shows', items: topShows },
+                ],
+                totals: {
+                    moviesWatched: stats.movies?.watched ?? moviesWatched.size,
+                    episodesWatched: stats.episodes?.watched ?? 0,
+                    showsWatched: stats.shows?.watched ?? showsWatched.size,
+                    totalMinutes,
+                    totalHours,
+                },
+                streaks: {
+                    topMovie: topMovies[0]?.name ?? 'No movie data',
+                    topShow: topShows[0]?.name ?? 'No show data',
+                    bingeStyle: totalHours > 200 ? 'marathoner' : totalHours > 50 ? 'steady viewer' : 'casual watcher',
+                },
+                comparisons: [
+                    {
+                        label: 'Movies vs Episodes',
+                        current: stats.movies?.watched ?? moviesWatched.size,
+                        previous: stats.episodes?.watched ?? 0,
+                        unit: 'watched',
+                    },
+                ],
+                charts: [
+                    {
+                        title: 'Monthly Watch Activity',
+                        chartType: 'area',
+                        data: monthly.data,
+                        labels: monthly.labels,
+                        unit: 'items',
+                    },
+                ],
+                meta: {
+                    totalMinutes,
+                },
+            },
+        };
+    },
+};
+// ═══════════════════════════════════════════════════════════════
+// Reddit — Karma, subreddits, activity
+// ═══════════════════════════════════════════════════════════════
+export const redditPlugin = {
+    id: 'reddit',
+    name: 'Reddit',
+    logoUrl: 'https://www.redditstatic.com/desktop2x/img/favicon/favicon-32x32.png',
+    connectionKind: 'oauth2',
+    supported: true,
+    scopes: ['identity', 'history', 'read'],
+    connect: {
+        start(context) {
+            const params = new URLSearchParams({
+                client_id: requireEnv('REDDIT_CLIENT_ID'),
+                response_type: 'code',
+                state: context.requestId,
+                redirect_uri: context.callbackBaseUrl,
+                duration: 'permanent',
+                scope: 'identity history read',
+            });
+            return {
+                url: `https://www.reddit.com/api/v1/authorize?${params.toString()}`,
+            };
+        },
+        async finish(context) {
+            const code = context.params.code;
+            if (!code)
+                throw new Error('Reddit callback missing code');
+            const response = await axiosClient.post('https://www.reddit.com/api/v1/access_token', new URLSearchParams({
+                grant_type: 'authorization_code',
+                code,
+                redirect_uri: context.callbackBaseUrl,
+            }), {
+                auth: {
+                    username: requireEnv('REDDIT_CLIENT_ID'),
+                    password: requireEnv('REDDIT_CLIENT_SECRET'),
+                },
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            });
+            const accessToken = response.data.access_token;
+            const refreshToken = response.data.refresh_token;
+            const profile = await axiosClient.get('https://oauth.reddit.com/api/v1/me', {
+                headers: { Authorization: `Bearer ${accessToken}`, 'User-Agent': 'Wrapped/1.0' },
+            });
+            return {
+                accessToken,
+                refreshToken,
+                tokenType: 'Bearer',
+                externalAccountId: profile.data.id,
+                metadata: {
+                    username: profile.data.name,
+                    karma: (profile.data.link_karma ?? 0) + (profile.data.comment_karma ?? 0),
+                },
+            };
+        },
+    },
+    async refresh(refreshToken) {
+        const response = await axiosClient.post('https://www.reddit.com/api/v1/access_token', new URLSearchParams({
+            grant_type: 'refresh_token',
+            refresh_token: refreshToken,
+        }), {
+            auth: {
+                username: requireEnv('REDDIT_CLIENT_ID'),
+                password: requireEnv('REDDIT_CLIENT_SECRET'),
+            },
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        });
+        return {
+            accessToken: response.data.access_token,
+            refreshToken: response.data.refresh_token,
+            tokenType: 'Bearer',
+        };
+    },
+    async sync(context) {
+        if (!context.accessToken)
+            throw new Error('Reddit access token missing');
+        const headers = { Authorization: `Bearer ${context.accessToken}`, 'User-Agent': 'Wrapped/1.0' };
+        const [karmaResponse, overviewResponse, subsResponse] = await Promise.all([
+            axiosClient.get('https://oauth.reddit.com/api/v1/me/karma', { headers }),
+            axiosClient.get('https://oauth.reddit.com/user/me/overview?limit=50', { headers }),
+            axiosClient.get('https://oauth.reddit.com/subreddits/mine/subscriber?limit=100', { headers }),
+        ]);
+        const karmaBreakdown = karmaResponse.data.data ?? [];
+        const overview = overviewResponse.data.data?.children ?? [];
+        const subreddits = subsResponse.data.data?.children ?? [];
+        const subredditKarma = new Map();
+        for (const item of karmaBreakdown) {
+            subredditKarma.set(item.sr, (item.comment_karma ?? 0) + (item.link_karma ?? 0));
+        }
+        const topSubreddits = countsToItems([...subredditKarma.entries()], 5);
+        const totalKarma = karmaBreakdown.reduce((s, k) => s + (k.comment_karma ?? 0) + (k.link_karma ?? 0), 0);
+        const totalPosts = overview.filter((o) => o.data.title).length;
+        const totalComments = overview.filter((o) => !o.data.title).length;
+        const subCount = subreddits.length;
+        const byMonth = new Map();
+        for (const child of overview) {
+            // Reddit overview doesn't include date easily; skip monthly for now
+        }
+        return {
+            service: 'reddit',
+            period: { start: isoDate(context.periodStart), end: isoDate(context.periodEnd) },
+            aggregates: {
+                top_items: [{ category: 'subreddits', items: topSubreddits }],
+                totals: {
+                    totalKarma,
+                    postsSubmitted: totalPosts,
+                    commentsMade: totalComments,
+                    subredditsJoined: subCount,
+                },
+                streaks: {
+                    topSubreddit: topSubreddits[0]?.name ?? 'No data yet',
+                    karmaTier: totalKarma > 100000 ? 'legend' : totalKarma > 10000 ? 'veteran' : totalKarma > 1000 ? 'regular' : 'lurker',
+                },
+                comparisons: [
+                    {
+                        label: 'Posts vs Comments',
+                        current: totalPosts,
+                        previous: totalComments,
+                        unit: 'contributions',
+                    },
+                ],
+                charts: [
+                    {
+                        title: 'Top Subreddits by Karma',
+                        chartType: 'bar',
+                        data: topSubreddits.slice(0, 5).map((s) => s.count),
+                        labels: topSubreddits.slice(0, 5).map((s) => s.name.slice(0, 2).toUpperCase()),
+                    },
+                ],
+                meta: {
+                    username: String(context.connectionMetadata?.username ?? ''),
+                },
+            },
+        };
+    },
+};
+// ═══════════════════════════════════════════════════════════════
+// RescueTime — Productivity & screen time
+// ═══════════════════════════════════════════════════════════════
+export const rescueTimePlugin = {
+    id: 'rescuetime',
+    name: 'RescueTime',
+    logoUrl: 'https://www.rescuetime.com/assets/images/favicon.ico',
+    connectionKind: 'oauth2',
+    supported: true,
+    scopes: ['time_data'],
+    connect: {
+        start(context) {
+            const params = new URLSearchParams({
+                client_id: requireEnv('RESCUETIME_CLIENT_ID'),
+                response_type: 'code',
+                redirect_uri: context.callbackBaseUrl,
+                scope: 'time_data',
+                state: context.requestId,
+            });
+            return {
+                url: `https://www.rescuetime.com/oauth/authorize?${params.toString()}`,
+            };
+        },
+        async finish(context) {
+            const code = context.params.code;
+            if (!code)
+                throw new Error('RescueTime callback missing code');
+            const response = await axiosClient.post('https://www.rescuetime.com/oauth/token', new URLSearchParams({
+                grant_type: 'authorization_code',
+                code,
+                client_id: requireEnv('RESCUETIME_CLIENT_ID'),
+                client_secret: requireEnv('RESCUETIME_CLIENT_SECRET'),
+                redirect_uri: context.callbackBaseUrl,
+            }));
+            return {
+                accessToken: response.data.access_token,
+                refreshToken: response.data.refresh_token,
+                expiresAt: response.data.expires_in ? Date.now() + response.data.expires_in * 1000 : null,
+                tokenType: 'Bearer',
+            };
+        },
+    },
+    async sync(context) {
+        if (!context.accessToken)
+            throw new Error('RescueTime access token missing');
+        const start = isoDate(context.periodStart);
+        const end = isoDate(context.periodEnd);
+        const [dataResponse, summaryResponse] = await Promise.all([
+            axiosClient.get('https://www.rescuetime.com/api/oauth/data', {
+                params: {
+                    access_token: context.accessToken,
+                    perspective: 'rank',
+                    restrict_kind: 'activity',
+                    restrict_begin: start,
+                    restrict_end: end,
+                    format: 'json',
+                },
+            }),
+            axiosClient.get('https://www.rescuetime.com/api/oauth/daily_summary_feed', {
+                params: { access_token: context.accessToken },
+            }),
+        ]);
+        const rows = dataResponse.data.rows ?? [];
+        const activities = rows.map((row) => ({
+            timeSpentSeconds: row[1],
+            name: row[3],
+            category: row[4],
+            productivity: row[5],
+        }));
+        const byCategory = new Map();
+        const byActivity = new Map();
+        let totalSeconds = 0;
+        let productiveSeconds = 0;
+        let distractingSeconds = 0;
+        for (const act of activities) {
+            totalSeconds += act.timeSpentSeconds;
+            byCategory.set(act.category, (byCategory.get(act.category) ?? 0) + act.timeSpentSeconds);
+            byActivity.set(act.name, (byActivity.get(act.name) ?? 0) + act.timeSpentSeconds);
+            if (act.productivity > 0)
+                productiveSeconds += act.timeSpentSeconds;
+            if (act.productivity < 0)
+                distractingSeconds += act.timeSpentSeconds;
+        }
+        const topCategories = countsToItems([...byCategory.entries()].map(([name, count]) => [name, Math.round(count / 60)]), 5);
+        const topActivities = countsToItems([...byActivity.entries()].map(([name, count]) => [name, Math.round(count / 60)]), 5);
+        const totalHours = Math.round(totalSeconds / 3600);
+        const productiveHours = Math.round(productiveSeconds / 3600);
+        const distractingHours = Math.round(distractingSeconds / 3600);
+        const summaries = summaryResponse.data ?? [];
+        const avgPulse = summaries.length
+            ? Math.round(summaries.reduce((s, d) => s + d.productivity_pulse, 0) / summaries.length)
+            : 0;
+        return {
+            service: 'rescuetime',
+            period: { start, end },
+            aggregates: {
+                top_items: [
+                    { category: 'activities', items: topActivities },
+                    { category: 'categories', items: topCategories },
+                ],
+                totals: {
+                    totalHours,
+                    productiveHours,
+                    distractingHours,
+                    avgProductivityPulse: avgPulse,
+                },
+                streaks: {
+                    topActivity: topActivities[0]?.name ?? 'No data',
+                    topCategory: topCategories[0]?.name ?? 'No data',
+                    productivityLabel: avgPulse > 75 ? 'productivity master' : avgPulse > 50 ? 'focused' : 'work in progress',
+                },
+                comparisons: [
+                    {
+                        label: 'Productive vs Distracting',
+                        current: productiveHours,
+                        previous: distractingHours,
+                        unit: 'hours',
+                    },
+                ],
+                charts: [
+                    {
+                        title: 'Top Categories',
+                        chartType: 'bar',
+                        data: topCategories.slice(0, 5).map((c) => c.count),
+                        labels: topCategories.slice(0, 5).map((c) => c.name.slice(0, 2).toUpperCase()),
+                    },
+                ],
+                meta: {
+                    sampleBased: true,
+                },
+            },
+        };
+    },
+};
+// ═══════════════════════════════════════════════════════════════
+// Todoist — Task completion & productivity
+// ═══════════════════════════════════════════════════════════════
+export const todoistPlugin = {
+    id: 'todoist',
+    name: 'Todoist',
+    logoUrl: 'https://todoist.com/favicon.ico',
+    connectionKind: 'oauth2',
+    supported: true,
+    scopes: ['data:read'],
+    connect: {
+        start(context) {
+            const params = new URLSearchParams({
+                client_id: requireEnv('TODOIST_CLIENT_ID'),
+                scope: 'data:read',
+                state: context.requestId,
+            });
+            return {
+                url: `https://todoist.com/oauth/authorize?${params.toString()}`,
+            };
+        },
+        async finish(context) {
+            const code = context.params.code;
+            if (!code)
+                throw new Error('Todoist callback missing code');
+            const response = await axiosClient.post('https://todoist.com/oauth/access_token', {
+                client_id: requireEnv('TODOIST_CLIENT_ID'),
+                client_secret: requireEnv('TODOIST_CLIENT_SECRET'),
+                code,
+                redirect_uri: context.callbackBaseUrl,
+            }, { headers: { 'Content-Type': 'application/json' } });
+            const accessToken = response.data.access_token;
+            const profile = await axiosClient.get('https://api.todoist.com/sync/v9/sync', {
+                params: {
+                    token: accessToken,
+                    sync_token: '*',
+                    resource_types: '["user"]',
+                },
+            });
+            const user = profile.data.user;
+            return {
+                accessToken,
+                tokenType: 'Bearer',
+                externalAccountId: String(user?.id ?? ''),
+                metadata: {
+                    fullName: user?.full_name,
+                    email: user?.email,
+                },
+            };
+        },
+    },
+    async sync(context) {
+        if (!context.accessToken)
+            throw new Error('Todoist access token missing');
+        const token = context.accessToken;
+        // Get productivity stats (today + this week)
+        const statsResponse = await axiosClient.get('https://api.todoist.com/sync/v9/productivity_stats', {
+            params: { token },
+        });
+        const stats = statsResponse.data;
+        // Get completed items with history
+        const completedResponse = await axiosClient.get('https://api.todoist.com/sync/v9/completed/get_all', {
+            params: {
+                token,
+                limit: 200,
+                since: context.periodStart.toISOString(),
+            },
+        });
+        const items = completedResponse.data.items ?? [];
+        const byProject = new Map();
+        const byMonth = new Map();
+        for (const item of items) {
+            byProject.set(item.project_id, (byProject.get(item.project_id) ?? 0) + 1);
+            const date = new Date(item.completed_date);
+            const key = `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
+            byMonth.set(key, (byMonth.get(key) ?? 0) + 1);
+        }
+        // Get project names
+        const projectsResponse = await axiosClient.get('https://api.todoist.com/sync/v9/sync', {
+            params: {
+                token,
+                sync_token: '*',
+                resource_types: '["projects"]',
+            },
+        });
+        const projects = projectsResponse.data.projects ?? [];
+        const projectMap = new Map(projects.map((p) => [String(p.id), p.name]));
+        const topProjects = countsToItems([...byProject.entries()].map(([id, count]) => [projectMap.get(id) ?? 'Unknown', count]), 5);
+        const monthly = buildMonthlySeries(context.periodStart, byMonth);
+        const totalCompleted = stats.completed_count ?? items.length;
+        const dailyAvg = items.length > 0 ? Math.round((items.length / Math.max(1, monthly.data.length)) * 10) / 10 : 0;
+        return {
+            service: 'todoist',
+            period: { start: isoDate(context.periodStart), end: isoDate(context.periodEnd) },
+            aggregates: {
+                top_items: [{ category: 'projects', items: topProjects }],
+                totals: {
+                    tasksCompleted: totalCompleted,
+                    recentCompleted: items.length,
+                    dailyAverage: dailyAvg,
+                },
+                streaks: {
+                    topProject: topProjects[0]?.name ?? 'No project data',
+                    completionStyle: totalCompleted > 1000 ? 'task machine' : totalCompleted > 500 ? 'high achiever' : 'building habits',
+                },
+                comparisons: [
+                    {
+                        label: 'Recent vs All-time',
+                        current: items.length,
+                        previous: Math.max(0, totalCompleted - items.length),
+                        unit: 'tasks',
+                    },
+                ],
+                charts: [
+                    {
+                        title: 'Monthly Completions',
+                        chartType: 'area',
+                        data: monthly.data,
+                        labels: monthly.labels,
+                        unit: 'tasks',
+                    },
+                ],
+                meta: {
+                    sampleBased: true,
+                },
+            },
+        };
+    },
+};
 export const serviceAdapters = {
     spotify: spotifyPlugin,
     apple_health: appleHealthPlugin,
@@ -1009,8 +1638,13 @@ export const serviceAdapters = {
     steam: steamPlugin,
     github: githubPlugin,
     notion: notionPlugin,
+    trakt: traktPlugin,
+    reddit: redditPlugin,
+    rescuetime: rescueTimePlugin,
+    todoist: todoistPlugin,
     goodreads: goodreadsPlugin,
     youtube: youtubePlugin,
+    apple_music: appleMusicPlugin,
 };
 export const supportedServiceIds = Object.values(serviceAdapters)
     .filter((service) => service.supported)

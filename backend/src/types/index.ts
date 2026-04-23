@@ -31,7 +31,13 @@ export type CardType =
   | 'chart'
   | 'community'
   | 'comparison'
-  | 'share';
+  | 'share'
+  | 'fun_fact'
+  | 'streak'
+  | 'trend'
+  | 'superlative'
+  | 'cross_service'
+  | 'opener';
 
 export interface Tokens {
   accessToken: string;
@@ -121,6 +127,42 @@ export interface WrappedShareData {
   headline: string;
 }
 
+export interface WrappedFunFactData {
+  fact: string;
+  icon?: string;
+}
+
+export interface WrappedStreakData {
+  streak: string;
+  description: string;
+  days?: number;
+}
+
+export interface WrappedTrendData {
+  trend: string;
+  direction: 'up' | 'down' | 'flat';
+  context: string;
+}
+
+export interface WrappedSuperlativeData {
+  superlative: string;
+  stat: string;
+  value: string;
+}
+
+export interface WrappedCrossServiceData {
+  headline: string;
+  description: string;
+  servicesInvolved: string[];
+}
+
+export interface WrappedOpenerData {
+  headline: string;
+  subtitle: string;
+  serviceCount: number;
+  period: string;
+}
+
 export type WrappedCardData =
   | WrappedHeroStatData
   | WrappedTopListData
@@ -128,7 +170,13 @@ export type WrappedCardData =
   | WrappedChartData
   | WrappedCommunityData
   | WrappedComparisonData
-  | WrappedShareData;
+  | WrappedShareData
+  | WrappedFunFactData
+  | WrappedStreakData
+  | WrappedTrendData
+  | WrappedSuperlativeData
+  | WrappedCrossServiceData
+  | WrappedOpenerData;
 
 export interface WrappedCard {
   id: string;
@@ -249,4 +297,8 @@ export interface ServiceCopySuggestions {
   insightHeadline?: string;
   insightSupportingData?: Array<{ label: string; value: string }>;
   shareHeadline?: string;
+  funFact?: string;
+  streakHighlight?: string;
+  trendObservation?: string;
+  superlative?: string;
 }

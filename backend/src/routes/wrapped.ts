@@ -8,7 +8,7 @@ import {
 } from '../db/index.js';
 import { getServiceAdapter } from '../plugins/index.js';
 import { selectCards } from '../services/cardSelector.js';
-import { generateAIInsights } from '../services/insightGenerator.js';
+import { generateAIInsights, generateCrossServiceInsights } from '../services/insightGenerator.js';
 import { requireAuth } from '../services/requestAuth.js';
 import type { ServiceId, ServiceStats, ServiceCopySuggestions } from '../types/index.js';
 
@@ -140,18 +140,23 @@ export async function wrappedRoutes(fastify: FastifyInstance) {
         return reply.status(400).send({ error: 'No synced data found for the selected services' });
       }
 
+      const allServicesForContext = stats.map((s) => ({ service: s.service, stats: s.aggregates as unknown as Record<string, any> }));
+
       const copyByService: Partial<Record<ServiceId, ServiceCopySuggestions>> = {};
       for (const stat of stats) {
         const copy = await generateAIInsights({
           title: `${stat.service} recap`,
           service: stat.service,
-          stats: stat.aggregates,
+          stats: stat.aggregates as unknown as Record<string, any>,
           period: periodLabel(range.startIso, range.endIso),
+          allServices: allServicesForContext,
         });
         copyByService[stat.service] = copy;
       }
 
-      const cards = selectCards(stats, copyByService, 15);
+      const crossServiceInsights = await generateCrossServiceInsights(allServicesForContext);
+
+      const cards = selectCards(stats, copyByService, crossServiceInsights, 25);
       const sessionId = crypto.randomUUID();
       const session = await wrappedSessions.create({
         id: sessionId,
