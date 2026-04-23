@@ -44,6 +44,12 @@
       "favicon": "./assets/favicon.png",
       "bundler": "metro"
     },
+    "updates": {
+      "url": "https://u.expo.dev/96a00cda-a839-4526-be4e-f6e4aa8f6a95",
+      "enabled": true,
+      "fallbackToCacheTimeout": 0,
+      "checkAutomatically": "ON_LOAD"
+    },
     "plugins": [
       "expo-web-browser",
       "expo-router",
@@ -72,6 +78,9 @@
         "projectId": "96a00cda-a839-4526-be4e-f6e4aa8f6a95"
       },
       "router": {}
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
     }
   }
 }
