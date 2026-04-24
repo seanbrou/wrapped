@@ -155,9 +155,10 @@ function buildCrossServiceCard(headline: string, description: string, services: 
 /* ─── Service-specific card builders ─────────────────────────────────────────── */
 
 function buildSpotifyCards(stats: ServiceStats, copy?: ServiceCopySuggestions): WrappedCard[] {
-  const artists = stats.aggregates.top_items.find((group) => group.category === 'artists')?.items ?? [];
-  const tracks = stats.aggregates.top_items.find((group) => group.category === 'tracks')?.items ?? [];
-  const genres = stats.aggregates.top_items.find((group) => group.category === 'genres')?.items ?? [];
+  const topItems = stats.aggregates.top_items ?? [];
+  const artists = topItems.find((group: any) => group.category === 'artists')?.items ?? [];
+  const tracks = topItems.find((group: any) => group.category === 'tracks')?.items ?? [];
+  const genres = topItems.find((group: any) => group.category === 'genres')?.items ?? [];
   const topArtist = artists[0]?.name ?? 'No artist';
   const topGenre = genres[0]?.name ?? 'genre-hopping';
   const sample = stats.aggregates.totals.recentPlaysSample ?? tracks.length;

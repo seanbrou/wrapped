@@ -182,8 +182,11 @@ export async function wrappedRoutes(fastify: FastifyInstance) {
         },
       };
     } catch (error) {
-      console.error('[wrapped] generation failed', error);
-      return reply.status(500).send({ error: 'Failed to generate wrapped session' });
+      const msg = error instanceof Error ? error.message : String(error);
+      const stack = error instanceof Error ? error.stack : '';
+      console.error('[wrapped] generation failed:', msg);
+      console.error('[wrapped] stack:', stack);
+      return reply.status(500).send({ error: `Failed to generate wrapped session: ${msg}` });
     }
   });
 

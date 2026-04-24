@@ -297,12 +297,23 @@ export default function Home() {
                   : 'Head to Accounts, connect at least one app, then come back here.'}
               </Text>
               {!hasConnections && (
-                <Pressable
-                  onPress={() => router.push('/(tabs)/services')}
-                  style={({ pressed }) => [styles.placeholderCta, pressed && styles.cardPressed]}
-                >
-                  <Text style={styles.placeholderCtaText}>Open Accounts</Text>
-                </Pressable>
+                <View style={{ gap: 10 }}>
+                  <Pressable
+                    onPress={() => router.push('/(tabs)/services')}
+                    style={({ pressed }) => [styles.placeholderCta, pressed && styles.cardPressed]}
+                  >
+                    <Text style={styles.placeholderCtaText}>Open Accounts</Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                      router.push('/wrapped/demo');
+                    }}
+                    style={({ pressed }) => [styles.placeholderCta, styles.demoCta, pressed && styles.cardPressed]}
+                  >
+                    <Text style={styles.demoCtaText}>Try a Demo 🎉</Text>
+                  </Pressable>
+                </View>
               )}
             </LiquidGlass>
           )}
@@ -719,6 +730,14 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
   },
   placeholderCtaText: {
+    ...type.bodySmallMedium,
+    color: colors.inverse,
+    fontWeight: '600',
+  },
+  demoCta: {
+    backgroundColor: colors.lilac,
+  },
+  demoCtaText: {
     ...type.bodySmallMedium,
     color: colors.inverse,
     fontWeight: '600',

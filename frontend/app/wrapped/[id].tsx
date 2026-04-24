@@ -121,6 +121,12 @@ export default function Player() {
 
   useEffect(() => {
     if (typeof params.id !== 'string') return;
+    if (params.id === 'demo') {
+      // Demo mode: use mock data directly without backend
+      const { MOCK_WRAPPED } = require('../../lib/mockData');
+      setCards(MOCK_WRAPPED.cards);
+      return;
+    }
     api.getWrapped(params.id)
       .then((session) => {
         setCards(session.cards);

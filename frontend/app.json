@@ -20,6 +20,7 @@
         "usesNonExemptEncryption": false
       },
       "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false,
         "NSHealthShareUsageDescription": "Wrapped reads the health data you choose so it can build recap cards on your device.",
         "NSHealthUpdateUsageDescription": "Wrapped uses your health permissions to keep recap summaries in sync when you ask it to.",
         "NSPhotoLibraryAddUsageDescription": "Wrapped saves recap images to your library only when you choose to export them."
