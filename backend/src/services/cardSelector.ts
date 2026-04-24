@@ -64,7 +64,7 @@ function buildChart(service: ServiceId, stats: ServiceStats): WrappedCard | null
 }
 
 function buildComparison(service: ServiceId, stats: ServiceStats, title: string): WrappedCard | null {
-  const comparison = stats.aggregates.comparisons[0];
+  const comparison = stats.aggregates.comparisons?.[0];
   if (!comparison) return null;
 
   return {
@@ -218,7 +218,7 @@ function buildStravaCards(stats: ServiceStats, copy?: ServiceCopySuggestions): W
   const distanceKm = stats.aggregates.totals.totalDistanceKm ?? 0;
   const movingHours = stats.aggregates.totals.totalMovingHours ?? 0;
   const activityCount = stats.aggregates.totals.activityCount ?? 0;
-  const topSport = String(stats.aggregates.streaks.topSport ?? 'Running');
+  const topSport = String(stats.aggregates.streaks?.topSport ?? 'Running');
   const sports = stats.aggregates.top_items.find((group) => group.category === 'sports')?.items ?? [];
 
   const cards: WrappedCard[] = [
@@ -274,7 +274,7 @@ function buildFitbitCards(stats: ServiceStats, copy?: ServiceCopySuggestions): W
   const totalSteps = stats.aggregates.totals.totalSteps ?? 0;
   const calories = stats.aggregates.totals.caloriesBurned ?? 0;
   const activeMinutes = stats.aggregates.totals.activeMinutes ?? 0;
-  const bestDay = stats.aggregates.streaks.bestDaySteps ?? 0;
+  const bestDay = stats.aggregates.streaks?.bestDaySteps ?? 0;
 
   const cards: WrappedCard[] = [
     {
@@ -377,7 +377,7 @@ function buildSteamCards(stats: ServiceStats, copy?: ServiceCopySuggestions): Wr
   const games = stats.aggregates.top_items.find((group) => group.category === 'games')?.items ?? [];
   const totalHours = stats.aggregates.totals.totalHours ?? 0;
   const gamesPlayed = stats.aggregates.totals.gamesPlayed ?? 0;
-  const topGame = String(stats.aggregates.streaks.topGame ?? games[0]?.name ?? 'No game');
+  const topGame = String(stats.aggregates.streaks?.topGame ?? games[0]?.name ?? 'No game');
 
   const cards: WrappedCard[] = [
     {
@@ -428,8 +428,8 @@ function buildSteamCards(stats: ServiceStats, copy?: ServiceCopySuggestions): Wr
 function buildGitHubCards(stats: ServiceStats, copy?: ServiceCopySuggestions): WrappedCard[] {
   const repos = stats.aggregates.top_items.find((group) => group.category === 'repos')?.items ?? [];
   const languages = stats.aggregates.top_items.find((group) => group.category === 'languages')?.items ?? [];
-  const topLanguage = String(stats.aggregates.streaks.topLanguage ?? languages[0]?.name ?? 'TypeScript');
-  const topRepo = String(stats.aggregates.streaks.topRepo ?? repos[0]?.name ?? 'No featured repo');
+  const topLanguage = String(stats.aggregates.streaks?.topLanguage ?? languages[0]?.name ?? 'TypeScript');
+  const topRepo = String(stats.aggregates.streaks?.topRepo ?? repos[0]?.name ?? 'No featured repo');
   const stars = stats.aggregates.totals.starsEarned ?? 0;
   const followers = stats.aggregates.totals.followers ?? 0;
 
@@ -491,8 +491,8 @@ function buildNotionCards(stats: ServiceStats, copy?: ServiceCopySuggestions): W
   const pages = stats.aggregates.top_items.find((group) => group.category === 'pages')?.items ?? [];
   const pageCount = stats.aggregates.totals.pageCount ?? 0;
   const databaseCount = stats.aggregates.totals.databaseCount ?? 0;
-  const workspaceName = String(stats.aggregates.streaks.workspaceName ?? 'Notion');
-  const mostRecentPage = String(stats.aggregates.streaks.mostRecentPage ?? pages[0]?.name ?? 'Untitled');
+  const workspaceName = String(stats.aggregates.streaks?.workspaceName ?? 'Notion');
+  const mostRecentPage = String(stats.aggregates.streaks?.mostRecentPage ?? pages[0]?.name ?? 'Untitled');
 
   const cards: WrappedCard[] = [
     {
@@ -566,12 +566,12 @@ function buildAppleHealthCards(stats: ServiceStats, copy?: ServiceCopySuggestion
     stats.aggregates.totals.sleepHours ??
     ((stats.aggregates.totals.sleepMinutes ?? 0) as number) / 60;
   const topWorkoutType = String(
-    stats.aggregates.streaks.topWorkoutType ??
+    stats.aggregates.streaks?.topWorkoutType ??
       stats.aggregates.top_items.find((group) => group.category === 'workouts')?.items?.[0]?.name ??
       'Workout',
   );
-  const longestExerciseStreak = Number(stats.aggregates.streaks.longestExerciseStreak ?? 0);
-  const bestSleepNightHours = Number(stats.aggregates.streaks.bestSleepNightHours ?? sleepHours);
+  const longestExerciseStreak = Number(stats.aggregates.streaks?.longestExerciseStreak ?? 0);
+  const bestSleepNightHours = Number(stats.aggregates.streaks?.bestSleepNightHours ?? sleepHours);
   const workouts = stats.aggregates.top_items.find((group) => group.category === 'workouts')?.items ?? [];
 
   const cards: WrappedCard[] = [
@@ -647,8 +647,8 @@ function buildTraktCards(stats: ServiceStats, copy?: ServiceCopySuggestions): Wr
   const totalHours = stats.aggregates.totals.totalHours ?? 0;
   const moviesWatched = stats.aggregates.totals.moviesWatched ?? 0;
   const episodesWatched = stats.aggregates.totals.episodesWatched ?? 0;
-  const topShow = String(stats.aggregates.streaks.topShow ?? shows[0]?.name ?? 'No show');
-  const bingeStyle = String(stats.aggregates.streaks.bingeStyle ?? 'viewer');
+  const topShow = String(stats.aggregates.streaks?.topShow ?? shows[0]?.name ?? 'No show');
+  const bingeStyle = String(stats.aggregates.streaks?.bingeStyle ?? 'viewer');
 
   const cards: WrappedCard[] = [
     {
@@ -701,8 +701,8 @@ function buildRedditCards(stats: ServiceStats, copy?: ServiceCopySuggestions): W
   const totalKarma = stats.aggregates.totals.totalKarma ?? 0;
   const postsSubmitted = stats.aggregates.totals.postsSubmitted ?? 0;
   const commentsMade = stats.aggregates.totals.commentsMade ?? 0;
-  const karmaTier = String(stats.aggregates.streaks.karmaTier ?? 'lurker');
-  const topSubreddit = String(stats.aggregates.streaks.topSubreddit ?? subreddits[0]?.name ?? 'No data');
+  const karmaTier = String(stats.aggregates.streaks?.karmaTier ?? 'lurker');
+  const topSubreddit = String(stats.aggregates.streaks?.topSubreddit ?? subreddits[0]?.name ?? 'No data');
 
   const cards: WrappedCard[] = [
     {
@@ -754,7 +754,7 @@ function buildRescueTimeCards(stats: ServiceStats, copy?: ServiceCopySuggestions
   const productiveHours = stats.aggregates.totals.productiveHours ?? 0;
   const distractingHours = stats.aggregates.totals.distractingHours ?? 0;
   const avgPulse = stats.aggregates.totals.avgProductivityPulse ?? 0;
-  const productivityLabel = String(stats.aggregates.streaks.productivityLabel ?? 'focused');
+  const productivityLabel = String(stats.aggregates.streaks?.productivityLabel ?? 'focused');
 
   const cards: WrappedCard[] = [
     {
@@ -804,8 +804,8 @@ function buildTodoistCards(stats: ServiceStats, copy?: ServiceCopySuggestions): 
   const tasksCompleted = stats.aggregates.totals.tasksCompleted ?? 0;
   const recentCompleted = stats.aggregates.totals.recentCompleted ?? 0;
   const dailyAverage = stats.aggregates.totals.dailyAverage ?? 0;
-  const topProject = String(stats.aggregates.streaks.topProject ?? projects[0]?.name ?? 'No project');
-  const completionStyle = String(stats.aggregates.streaks.completionStyle ?? 'building habits');
+  const topProject = String(stats.aggregates.streaks?.topProject ?? projects[0]?.name ?? 'No project');
+  const completionStyle = String(stats.aggregates.streaks?.completionStyle ?? 'building habits');
 
   const cards: WrappedCard[] = [
     {
@@ -871,14 +871,14 @@ function buildShareSummary(stats: ServiceStats[]) {
   const fragments = stats.map((serviceStats) => {
     switch (serviceStats.service) {
       case 'spotify':
-        return `${serviceStats.aggregates.streaks.topArtist ?? 'your top artist'} on repeat`;
+        return `${serviceStats.aggregates.streaks?.topArtist ?? serviceStats.aggregates.top_items?.find((g: any) => g.category === 'artists')?.items?.[0]?.name ?? 'your top artist'} on repeat`;
       case 'strava':
         return `${shortNumber(Math.round(serviceStats.aggregates.totals.totalDistanceKm ?? 0))} km logged`;
       case 'fitbit':
       case 'apple_health':
         return `${shortNumber(serviceStats.aggregates.totals.totalSteps ?? 0)} steps`;
       case 'lastfm':
-        return `${serviceStats.aggregates.streaks.topArtist ?? 'your top artist'} on top`;
+        return `${serviceStats.aggregates.streaks?.topArtist ?? serviceStats.aggregates.top_items?.find((g: any) => g.category === 'artists')?.items?.[0]?.name ?? 'your top artist'} on top`;
       case 'steam':
         return `${shortNumber(serviceStats.aggregates.totals.totalHours ?? 0)} hours played`;
       case 'github':
